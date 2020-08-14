@@ -1,8 +1,8 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2016 Rasmus Mikkelsen
-// Copyright (c) 2015-2016 eBay Software Foundation
-// https://github.com/rasmus/EventFlow
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
+// https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -22,22 +22,26 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using EventFlow.Configuration;
+using EventFlow.Configuration.Bootstraps;
 using EventFlow.Configuration.Decorators;
 using EventFlow.Core.IoC.Factories;
 using EventFlow.Extensions;
 
 namespace EventFlow.Core.IoC
 {
-    internal class EventFlowIoCServiceRegistration : ServiceRegistration, IServiceRegistration
+    internal class EventFlowIoCServiceRegistration : IServiceRegistration
     {
         private readonly object _syncRoot = new object();
         private readonly Dictionary<Type, List<Registration>> _registrations = new Dictionary<Type, List<Registration>>();
         private readonly DecoratorService _decoratorService = new DecoratorService();
+
+        public EventFlowIoCServiceRegistration()
+        {
+            Register<IBootstrapper, Bootstrapper>(Lifetime.Singleton);
+        }
 
         public void Register<TService, TImplementation>(
             Lifetime lifetime = Lifetime.AlwaysUnique,
@@ -119,27 +123,24 @@ namespace EventFlow.Core.IoC
 
         public IRootResolver CreateResolver(bool validateRegistrations)
         {
-            var resolver = new EventFlowIoCResolver(_registrations, true);
+            var resolver = new EventFlowIoCResolver(
+                new ConcurrentDictionary<int, object>(), 
+                _registrations,
+                true);
+
             if (validateRegistrations)
             {
                 resolver.ValidateRegistrations();
             }
 
-            var bootstraps = OrderBootstraps(resolver.ResolveAll(typeof(IBootstrap)).Select(i => (IBootstrap) i));
+            var bootstrapper = resolver.Resolve<IBootstrapper>();
 
-            using (var a = AsyncHelper.Wait)
-            {
-                a.Run(StartAsync(bootstraps, CancellationToken.None));
-            }
+#pragma warning disable 618
+            // TODO: Figure out bootstrapping alternative for 1.0
+            bootstrapper.Start();
+#pragma warning restore 618
 
             return resolver;
-        }
-
-        private static async Task StartAsync(
-            IEnumerable<IBootstrap> bootstraps,
-            CancellationToken cancellationToken)
-        {
-            await Task.WhenAll(bootstraps.Select(b => b.BootAsync(cancellationToken))).ConfigureAwait(false);
         }
 
         private void Register(
@@ -150,8 +151,7 @@ namespace EventFlow.Core.IoC
         {
             lock (_syncRoot)
             {
-                List<Registration> registrations;
-                if (_registrations.TryGetValue(serviceType, out registrations))
+                if (_registrations.TryGetValue(serviceType, out var registrations))
                 {
                     if (keepDefault)
                     {

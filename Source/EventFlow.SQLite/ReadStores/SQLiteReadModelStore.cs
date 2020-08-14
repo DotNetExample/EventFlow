@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -21,6 +21,8 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+using EventFlow.Core;
+using EventFlow.Core.RetryStrategies;
 using EventFlow.Logs;
 using EventFlow.ReadStores;
 using EventFlow.Sql.ReadModels;
@@ -29,14 +31,15 @@ using EventFlow.SQLite.Connections;
 namespace EventFlow.SQLite.ReadStores
 {
     public class SQLiteReadModelStore<TReadModel> : SqlReadModelStore<ISQLiteConnection, TReadModel>, ISQLiteReadModelStore<TReadModel>
-        where TReadModel : class, IReadModel, new()
+        where TReadModel : class, IReadModel
     {
         public SQLiteReadModelStore(
             ILog log,
             ISQLiteConnection connection,
             IReadModelSqlGenerator readModelSqlGenerator,
-            IReadModelFactory<TReadModel> readModelFactory)
-            : base(log, connection, readModelSqlGenerator, readModelFactory)
+            IReadModelFactory<TReadModel> readModelFactory,
+            ITransientFaultHandler<IOptimisticConcurrencyRetryStrategy> transientFaultHandler)
+            : base(log, connection, readModelSqlGenerator, readModelFactory, transientFaultHandler)
         {
         }
     }

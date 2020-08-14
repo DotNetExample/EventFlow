@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -99,6 +99,18 @@ namespace EventFlow.Extensions
                     });
         }
 
+        internal static bool HasConstructorParameterOfType(this Type type, Predicate<Type> predicate)
+        {
+            return type.GetTypeInfo().GetConstructors()
+                .Any(c => c.GetParameters()
+                    .Any(p => predicate(p.ParameterType)));
+        }
+
+        internal static bool IsAssignableTo<T>(this Type type)
+        {
+            return typeof(T).GetTypeInfo().IsAssignableFrom(type);
+        }
+
         internal static IReadOnlyDictionary<Type, Action<T, IAggregateEvent>> GetAggregateEventApplyMethods<TAggregate, TIdentity, T>(this Type type)
             where TAggregate : IAggregateRoot<TIdentity>
             where TIdentity : IIdentity
@@ -110,7 +122,12 @@ namespace EventFlow.Extensions
                 .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
                 .Where(mi =>
                     {
-                        if (mi.Name != "Apply") return false;
+                        if (!string.Equals(mi.Name, "Apply", StringComparison.Ordinal) &&
+                            !mi.Name.EndsWith(".Apply", StringComparison.Ordinal))
+                        {
+                            return false;
+                        }
+
                         var parameters = mi.GetParameters();
                         return
                             parameters.Length == 1 &&
@@ -118,7 +135,7 @@ namespace EventFlow.Extensions
                     })
                 .ToDictionary(
                     mi => mi.GetParameters()[0].ParameterType,
-                    mi => ReflectionHelper.CompileMethodInvocation<Action<T, IAggregateEvent>>(type, "Apply", mi.GetParameters()[0].ParameterType));
+                    mi => ReflectionHelper.CompileMethodInvocation<Action<T, IAggregateEvent>>(type, mi.Name, mi.GetParameters()[0].ParameterType));
         }
     }
 }

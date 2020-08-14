@@ -1,7 +1,7 @@
 ﻿// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -22,9 +22,10 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Reflection;
 using EventFlow.Configuration;
 using EventFlow.Elasticsearch.Extensions;
 using EventFlow.Elasticsearch.ReadStores;
@@ -34,6 +35,7 @@ using EventFlow.Elasticsearch.ValueObjects;
 using EventFlow.Extensions;
 using EventFlow.ReadStores;
 using EventFlow.TestHelpers;
+using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Entities;
 using EventFlow.TestHelpers.Suites;
 using Nest;
@@ -45,102 +47,126 @@ namespace EventFlow.Elasticsearch.Tests.IntegrationTests
     [Category(Categories.Integration)]
     public class ElasticsearchReadModelStoreTests : TestSuiteForReadModelStore
     {
+        protected override Type ReadModelType { get; } = typeof(ElasticsearchThingyReadModel);
+
         private IElasticClient _elasticClient;
-        private ElasticsearchRunner.ElasticsearchInstance _elasticsearchInstance;
-        private string _indexName;
 
-        [OneTimeSetUp]
-        public void FixtureSetUp()
-        {
-            _elasticsearchInstance = ElasticsearchRunner.StartAsync().Result;
-        }
-
-        [OneTimeTearDown]
-        public void FixtureTearDown()
-        {
-            _elasticsearchInstance.DisposeSafe("Failed to close Elasticsearch down");
-        }
-
-        public class TestReadModelDescriptionProvider : IReadModelDescriptionProvider
-        {
-            private readonly string _indexName;
-
-            public TestReadModelDescriptionProvider(
-                string indexName)
-            {
-                _indexName = indexName;
-            }
-
-            public ReadModelDescription GetReadModelDescription<TReadModel>() where TReadModel : IReadModel
-            {
-                return new ReadModelDescription(
-                    new IndexName(_indexName));
-            }
-        }
+        private readonly List<string> _indexes = new List<string>();
 
         protected override IRootResolver CreateRootResolver(IEventFlowOptions eventFlowOptions)
         {
-            try
+            var elasticsearchUrl = Environment.GetEnvironmentVariable("ELASTICSEARCH_URL") ?? "http://localhost:9200";
+
+            // Setup connection settings separateley as by default EventFlow uses SniffingConnectionPool
+            // which is not working well with elasticserch hosted in local docker
+            var connectionSettings = new ConnectionSettings(new Uri(elasticsearchUrl))
+                .ThrowExceptions()
+                .SniffLifeSpan(TimeSpan.FromMinutes(5))
+                .DisablePing();
+           
+            var resolver = eventFlowOptions
+                .RegisterServices(sr => { sr.RegisterType(typeof(ThingyMessageLocator)); })
+                .ConfigureElasticsearch(connectionSettings)
+                .UseElasticsearchReadModel<ElasticsearchThingyReadModel>()
+                .UseElasticsearchReadModel<ElasticsearchThingyMessageReadModel, ThingyMessageLocator>()
+                .AddQueryHandlers(
+                    typeof(ElasticsearchThingyGetQueryHandler),
+                    typeof(ElasticsearchThingyGetVersionQueryHandler),
+                    typeof(ElasticsearchThingyGetMessagesQueryHandler))
+                .CreateResolver();
+
+            PrepareIndexes(resolver);
+
+            return resolver;
+        }
+
+        private void PrepareIndexes(IRootResolver resolver)
+        {
+            _elasticClient = resolver.Resolve<IElasticClient>();
+
+            var readModelTypes =
+                GetLoadableTypes<ElasticsearchTypeAttribute>(typeof(ElasticsearchThingyReadModel).Assembly);
+
+            foreach (var readModelType in readModelTypes)
             {
-                _indexName = $"eventflow-test-{Guid.NewGuid():D}";
+                var esType = readModelType.GetTypeInfo()
+                    .GetCustomAttribute<ElasticsearchTypeAttribute>();
 
-                var testReadModelDescriptionProvider = new TestReadModelDescriptionProvider(_indexName);
+                var aliasResponse = _elasticClient.GetAlias(x => x.Name(esType.Name));
 
-                var resolver = eventFlowOptions
-                    .RegisterServices(sr =>
+                if (aliasResponse.ApiCall.Success)
+                {
+                    if (aliasResponse.Indices != null)
+                    {
+                        foreach (var indice in aliasResponse?.Indices)
                         {
-                            sr.RegisterType(typeof(ThingyMessageLocator));
-                            sr.Register<IReadModelDescriptionProvider>(c => testReadModelDescriptionProvider);
-                        })
-                    .ConfigureElasticsearch(_elasticsearchInstance.Uri)
-                    .UseElasticsearchReadModel<ElasticsearchThingyReadModel>()
-                    .UseElasticsearchReadModel<ElasticsearchThingyMessageReadModel, ThingyMessageLocator>()
-                    .AddQueryHandlers(
-                        typeof(ElasticsearchThingyGetQueryHandler),
-                        typeof(ElasticsearchThingyGetVersionQueryHandler),
-                        typeof(ElasticsearchThingyGetMessagesQueryHandler))
-                    .CreateResolver();
+                            _elasticClient.DeleteAlias(indice.Key, esType.Name);
 
-                _elasticClient = resolver.Resolve<IElasticClient>();
+                            _elasticClient.DeleteIndex(indice.Key,
+                                d => d.RequestConfiguration(c => c.AllowedStatusCodes((int)HttpStatusCode.NotFound)));
+                        }
 
-                _elasticClient.CreateIndex(_indexName, c => c
+                        _elasticClient.DeleteIndex(esType.Name,
+                            d => d.RequestConfiguration(c => c.AllowedStatusCodes((int)HttpStatusCode.NotFound)));
+                    }
+                }
+
+                var indexName = GetIndexName(esType.Name);
+
+                _indexes.Add(indexName);
+
+                _elasticClient.CreateIndex(indexName, c => c
                     .Settings(s => s
                         .NumberOfShards(1)
                         .NumberOfReplicas(0))
+                    .Aliases(a => a.Alias(esType.Name))
                     .Mappings(m => m
-                        .Map<ElasticsearchThingyMessageReadModel>(d => d
+                        .Map(TypeName.Create(readModelType), d => d
                             .AutoMap())));
-
-                _elasticsearchInstance.WaitForGreenStateAsync().Wait(TimeSpan.FromMinutes(1));
-
-                return resolver;
             }
-            catch
+        }
+
+        private string GetIndexName(string name)
+        {
+            return $"eventflow-test-{name}-{Guid.NewGuid():D}".ToLowerInvariant();
+        }
+
+        private IEnumerable<Type> GetLoadableTypes<T>(params Assembly[] assemblies)
+        {
+            IEnumerable<Type> availableTypes;
+
+            if (assemblies == null || !assemblies.Any()) throw new ArgumentNullException(nameof(assemblies));
+            try
             {
-                _elasticsearchInstance.DisposeSafe("Failed to dispose ES instance");
-                throw;
+                availableTypes = assemblies.SelectMany(x => x.GetTypes());
+            }
+            catch (ReflectionTypeLoadException e)
+            {
+                availableTypes = e.Types.Where(t => t != null);
+            }
+
+            foreach (Type type in availableTypes)
+            {
+                if (type.GetCustomAttributes(typeof(T), true).Length > 0)
+                {
+                    yield return type;
+                }
             }
         }
 
-        protected override Task PurgeTestAggregateReadModelAsync()
-        {
-            return ReadModelPopulator.PurgeAsync<ElasticsearchThingyReadModel>(CancellationToken.None);
-        }
-
-        protected override Task PopulateTestAggregateReadModelAsync()
-        {
-            return ReadModelPopulator.PopulateAsync<ElasticsearchThingyReadModel>(CancellationToken.None);
-        }
 
         [TearDown]
         public void TearDown()
         {
             try
             {
-                Console.WriteLine($"Deleting test index '{_indexName}'");
-                _elasticClient.DeleteIndex(
-                    _indexName,
-                    r => r.RequestConfiguration(c => c.AllowedStatusCodes((int)HttpStatusCode.NotFound)));
+                foreach (var index in _indexes)
+                {
+                    Console.WriteLine($"Deleting test index '{index}'");
+                    _elasticClient.DeleteIndex(
+                        index,
+                        r => r.RequestConfiguration(c => c.AllowedStatusCodes((int)HttpStatusCode.NotFound)));
+                }
             }
             catch (Exception e)
             {

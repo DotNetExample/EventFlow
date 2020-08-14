@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -28,6 +28,8 @@ using EventFlow.Aggregates;
 using EventFlow.Commands;
 using EventFlow.Configuration;
 using EventFlow.Configuration.Bootstraps;
+using EventFlow.Configuration.Cancellation;
+using EventFlow.Configuration.Serialization;
 using EventFlow.Core;
 using EventFlow.Core.Caching;
 using EventFlow.Core.IoC;
@@ -191,6 +193,11 @@ namespace EventFlow
         private void RegisterDefaults(IServiceRegistration serviceRegistration)
         {
             serviceRegistration.Register<ILog, ConsoleLog>();
+            serviceRegistration.Register<IAggregateStoreResilienceStrategy, NoAggregateStoreResilienceStrategy>();
+            serviceRegistration.Register<IDispatchToReadStoresResilienceStrategy, NoDispatchToReadStoresResilienceStrategy>();
+            serviceRegistration.Register<ISagaUpdateResilienceStrategy, NoSagaUpdateResilienceStrategy>();
+            serviceRegistration.Register<IDispatchToSubscriberResilienceStrategy, NoDispatchToSubscriberResilienceStrategy>();
+            serviceRegistration.Register<IDispatchToReadStores, DispatchToReadStores>();
             serviceRegistration.Register<IEventStore, EventStoreBase>();
             serviceRegistration.Register<IEventPersistence, InMemoryEventPersistence>(Lifetime.Singleton);
             serviceRegistration.Register<ICommandBus, CommandBus>();
@@ -203,8 +210,9 @@ namespace EventFlow
             serviceRegistration.Register<IReadModelPopulator, ReadModelPopulator>();
             serviceRegistration.Register<IEventJsonSerializer, EventJsonSerializer>();
             serviceRegistration.Register<IEventDefinitionService, EventDefinitionService>(Lifetime.Singleton);
-            serviceRegistration.Register<IQueryProcessor, QueryProcessor>(Lifetime.Singleton);
-            serviceRegistration.Register<IJsonSerializer, JsonSerializer>();
+            serviceRegistration.Register<IQueryProcessor, QueryProcessor>();
+            serviceRegistration.Register<IJsonSerializer, JsonSerializer>(Lifetime.Singleton);
+            serviceRegistration.Register<IJsonOptions, JsonOptions>();
             serviceRegistration.Register<IJobScheduler, InstantJobScheduler>();
             serviceRegistration.Register<IJobRunner, JobRunner>();
             serviceRegistration.Register<IJobDefinitionService, JobDefinitionService>(Lifetime.Singleton);
@@ -221,13 +229,14 @@ namespace EventFlow
             serviceRegistration.Register<ISagaStore, SagaAggregateStore>();
             serviceRegistration.Register<ISagaErrorHandler, SagaErrorHandler>();
             serviceRegistration.Register<IDispatchToSagas, DispatchToSagas>();
-#if NET451
+#if NET452
             serviceRegistration.Register<IMemoryCache, MemoryCache>(Lifetime.Singleton);
 #else
             serviceRegistration.Register<IMemoryCache, DictionaryMemoryCache>(Lifetime.Singleton);
 #endif
             serviceRegistration.RegisterGeneric(typeof(ISagaUpdater<,,,>), typeof(SagaUpdater<,,,>));
             serviceRegistration.Register<IEventFlowConfiguration>(_ => _eventFlowConfiguration);
+            serviceRegistration.Register<ICancellationConfiguration>(_ => _eventFlowConfiguration);
             serviceRegistration.RegisterGeneric(typeof(ITransientFaultHandler<>), typeof(TransientFaultHandler<>));
             serviceRegistration.RegisterGeneric(typeof(IReadModelFactory<>), typeof(ReadModelFactory<>), Lifetime.Singleton);
             serviceRegistration.Register<IBootstrap, DefinitionServicesInitilizer>();

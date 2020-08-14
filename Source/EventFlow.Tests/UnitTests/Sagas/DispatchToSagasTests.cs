@@ -1,19 +1,19 @@
-﻿// The MIT License (MIT)
-//
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// The MIT License (MIT)
+// 
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
-//
+// 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
 // the Software without restriction, including without limitation the rights to
 // use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
 // the Software, and to permit persons to whom the Software is furnished to do so,
 // subject to the following conditions:
-//
+// 
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-//
+// 
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
 // FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
@@ -68,7 +68,10 @@ namespace EventFlow.Tests.UnitTests.Sagas
                 .Returns(_sagaUpdaterMock.Object);
             _sagaDefinitionServiceMock
                 .Setup(d => d.GetSagaDetails(It.IsAny<Type>()))
-                .Returns(new[] {SagaDetails.From(sagaType),});
+                .Returns(new[] {SagaDetails.From(sagaType)});
+            _sagaLocatorMock
+                .Setup(s => s.LocateSagaAsync(It.IsAny<IDomainEvent>(), CancellationToken.None))
+                .Returns(() => Task.FromResult<ISagaId>(new ThingySagaId(string.Empty)));
         }
 
         [Test]
@@ -86,6 +89,23 @@ namespace EventFlow.Tests.UnitTests.Sagas
             _sagaUpdaterMock.Verify(
                 u => u.ProcessAsync(sagaMock.Object, It.IsAny<IDomainEvent>(), It.IsAny<ISagaContext>(), It.IsAny<CancellationToken>()),
                 Times.Exactly(domainEventCount));
+        }
+
+        [Test]
+        public async Task SagaStoreReceivesEventIdAsSourceId()
+        {
+            // Arrange
+            var sagaMock = Arrange_Woking_SagaStore(SagaState.Running);
+            var domainEvent = ADomainEvent<ThingyPingEvent>();
+
+            // Act
+            await Sut.ProcessAsync(new[] { domainEvent }, CancellationToken.None).ConfigureAwait(false);
+
+            // Assert
+            _sagaStoreMock.Verify(a => a.UpdateAsync(It.IsAny<ISagaId>(), It.IsAny<Type>(),
+                domainEvent.Metadata.EventId,
+                It.IsAny<Func<ISaga, CancellationToken, Task>>(),
+                It.IsAny<CancellationToken>()));
         }
 
         [Test]
@@ -134,7 +154,7 @@ namespace EventFlow.Tests.UnitTests.Sagas
             _sagaStoreMock
                 .Setup(s => s.UpdateAsync(
                     It.IsAny<ISagaId>(),
-                    It.IsAny<SagaDetails>(),
+                    It.IsAny<Type>(),
                     It.IsAny<ISourceId>(),
                     It.IsAny<Func<ISaga, CancellationToken, Task>>(),
                     It.IsAny<CancellationToken>()))
@@ -165,11 +185,11 @@ namespace EventFlow.Tests.UnitTests.Sagas
             _sagaStoreMock
                 .Setup(s => s.UpdateAsync(
                     It.IsAny<ISagaId>(),
-                    It.IsAny<SagaDetails>(),
+                    It.IsAny<Type>(),
                     It.IsAny<ISourceId>(),
                     It.IsAny<Func<ISaga, CancellationToken, Task>>(),
                     It.IsAny<CancellationToken>()))
-                .Callback<ISagaId, SagaDetails, ISourceId, Func<ISaga, CancellationToken, Task>, CancellationToken>(
+                .Callback<ISagaId, Type, ISourceId, Func<ISaga, CancellationToken, Task>, CancellationToken>(
                     (id, details, arg3, arg4, arg5) => arg4(sagaMock.Object, CancellationToken.None))
                 .ReturnsAsync(sagaMock.Object);
 

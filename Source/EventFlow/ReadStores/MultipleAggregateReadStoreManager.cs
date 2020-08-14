@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -27,6 +27,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using EventFlow.Aggregates;
 using EventFlow.Configuration;
+using EventFlow.Extensions;
 using EventFlow.Logs;
 
 namespace EventFlow.ReadStores
@@ -34,7 +35,7 @@ namespace EventFlow.ReadStores
     public class MultipleAggregateReadStoreManager<TReadStore, TReadModel, TReadModelLocator> :
         ReadStoreManager<TReadStore, TReadModel>
         where TReadStore : IReadModelStore<TReadModel>
-        where TReadModel : class, IReadModel, new()
+        where TReadModel : class, IReadModel
         where TReadModelLocator : IReadModelLocator
     {
         private readonly TReadModelLocator _readModelLocator;
@@ -59,20 +60,37 @@ namespace EventFlow.ReadStores
                 let readModelIds = _readModelLocator.GetReadModelIds(de)
                 from rid in readModelIds
                 group de by rid into g
-                select new ReadModelUpdate(g.Key, g.OrderBy(d => d.AggregateSequenceNumber).ToList())
+                select new ReadModelUpdate(g.Key, g.OrderBy(d => d.Timestamp).ThenBy(d => d.AggregateSequenceNumber).ToList())
                 ).ToList();
             return readModelUpdates;
         }
 
-        protected override async Task<ReadModelEnvelope<TReadModel>> UpdateAsync(
+        protected override async Task<ReadModelUpdateResult<TReadModel>> UpdateAsync(
             IReadModelContext readModelContext,
             IReadOnlyCollection<IDomainEvent> domainEvents,
             ReadModelEnvelope<TReadModel> readModelEnvelope,
             CancellationToken cancellationToken)
         {
-            var readModel = readModelEnvelope.ReadModel ?? await ReadModelFactory.CreateAsync(readModelEnvelope.ReadModelId, cancellationToken).ConfigureAwait(false);
-            await ReadModelDomainEventApplier.UpdateReadModelAsync(readModel, domainEvents, readModelContext, cancellationToken).ConfigureAwait(false);
-            return ReadModelEnvelope<TReadModel>.With(readModelEnvelope.ReadModelId, readModel);
+            var readModel = readModelEnvelope.ReadModel;
+            if (readModel == null)
+            {
+                readModel = await ReadModelFactory.CreateAsync(
+                    readModelEnvelope.ReadModelId,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await ReadModelDomainEventApplier.UpdateReadModelAsync(
+                readModel,
+                domainEvents,
+                readModelContext,
+                cancellationToken)
+                .ConfigureAwait(false);
+
+            return readModelEnvelope.AsModifedResult(
+                readModel,
+                readModelEnvelope.Version.GetValueOrDefault() + 1 // the best we can do
+                );
         }
     }
 }

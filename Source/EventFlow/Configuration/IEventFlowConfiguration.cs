@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -22,13 +22,14 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using System;
+using EventFlow.Configuration.Cancellation;
 
 namespace EventFlow.Configuration
 {
     public interface IEventFlowConfiguration
     {
         /// <summary>
-        /// Number of events to load from the event persistance when read models
+        /// Number of events to load from the event persistence when read models
         /// are populated.
         /// </summary>
         /// <remarks>Defaults to 200</remarks>
@@ -37,7 +38,7 @@ namespace EventFlow.Configuration
         /// <summary>
         /// Use by <c>OptimisticConcurrencyRetryStrategy</c> to determine the number
         /// of retries when an optimistic concurrency exceptions is thrown from the
-        /// event persistance.
+        /// event persistence.
         /// 
         /// If more fine grained control of is needed, a custom implementation of
         /// <c>IOptimisticConcurrencyRetryStrategy</c> should be provided.
@@ -48,7 +49,7 @@ namespace EventFlow.Configuration
         /// <summary>
         /// Use by <c>OptimisticConcurrencyRetryStrategy</c> to determine the delay
         /// between retries when an optimistic concurrency exceptions is thrown from the
-        /// event persistance.
+        /// event persistence.
         /// 
         /// If more fine grained control of is needed, a custom implementation of
         /// <c>IOptimisticConcurrencyRetryStrategy</c> should be provided.
@@ -57,7 +58,7 @@ namespace EventFlow.Configuration
         TimeSpan DelayBeforeRetryOnOptimisticConcurrencyExceptions { get; }
 
         /// <summary>
-        /// Should EventFlow throw exceptions thrown by subscibers when publishing
+        /// Should EventFlow throw exceptions thrown by subscribers when publishing
         /// domain events.
         /// </summary>
         /// <remarks>Defaults to false</remarks>
@@ -69,5 +70,16 @@ namespace EventFlow.Configuration
         /// </summary>
         /// <remarks>Defaults to false</remarks>
         bool IsAsynchronousSubscribersEnabled { get; }
+
+        /// <summary>
+        /// The point of no return in the processing chain. Before
+        /// this point, cancellation is possible. After this point, the passed
+        /// cancellation token is ignored.
+        /// </summary>
+        /// <remarks>Defaults to
+        /// <see cref="Cancellation.CancellationBoundary.BeforeCommittingEvents"/></remarks>
+        CancellationBoundary CancellationBoundary { get; }
+
+        bool ForwardOptimisticConcurrencyExceptions { get; set; }
     }
 }

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -25,6 +25,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using EventFlow.Aggregates.ExecutionResults;
 using EventFlow.Exceptions;
 using EventFlow.Provided.Specifications;
 using EventFlow.Specifications;
@@ -33,7 +34,15 @@ namespace EventFlow.Extensions
 {
     public static class SpecificationExtensions
     {
+        [Obsolete("Use 'ThrowDomainErrorIfNotSatisfied' instead")]
         public static void ThrowDomainErrorIfNotStatisfied<T>(
+            this ISpecification<T> specification,
+            T obj)
+        {
+            specification.ThrowDomainErrorIfNotSatisfied(obj);
+        }
+
+        public static void ThrowDomainErrorIfNotSatisfied<T>(
             this ISpecification<T> specification,
             T obj)
         {
@@ -43,8 +52,21 @@ namespace EventFlow.Extensions
             if (whyIsNotStatisfiedBy.Any())
             {
                 throw DomainError.With(
-                    $"'{specification.GetType().PrettyPrint()}' is not satisfied becase of {string.Join(" and ", whyIsNotStatisfiedBy)}");
+                    $"'{specification.GetType().PrettyPrint()}' is not satisfied because of {string.Join(" and ", whyIsNotStatisfiedBy)}");
             }
+        }
+
+        public static IExecutionResult IsNotSatisfiedByAsExecutionResult<T>(
+            this ISpecification<T> specification,
+            T obj)
+        {
+            var whyIsNotStatisfiedBy = specification
+                .WhyIsNotSatisfiedBy(obj)
+                .ToList();
+            
+            return whyIsNotStatisfiedBy.Any()
+                ? ExecutionResult.Failed(whyIsNotStatisfiedBy)
+                : ExecutionResult.Success();
         }
 
         public static ISpecification<T> All<T>(

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -64,7 +64,8 @@ namespace EventFlow.Extensions
             var snapshotUpgraderTypes = fromAssembly
                 .GetTypes()
                 .Where(t => !t.GetTypeInfo().IsAbstract)
-                .Where(t => t.GetTypeInfo().GetInterfaces().Any(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(ISnapshotUpgrader<,>)))
+                .Where(t => t.GetTypeInfo().GetInterfaces().Any(IsSnapshotUpgraderInterface))
+                .Where(t => !t.HasConstructorParameterOfType(IsSnapshotUpgraderInterface))
                 .Where(t => predicate(t));
 
             return eventFlowOptions.AddSnapshotUpgraders(snapshotUpgraderTypes);
@@ -88,7 +89,7 @@ namespace EventFlow.Extensions
                         var interfaceType = snapshotUpgraderType
                             .GetTypeInfo()
                             .GetInterfaces()
-                            .Single(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(ISnapshotUpgrader<,>));
+                            .Single(IsSnapshotUpgraderInterface);
                         sr.Register(interfaceType, snapshotUpgraderType);
                     }
                 });
@@ -106,6 +107,11 @@ namespace EventFlow.Extensions
             this IEventFlowOptions eventFlowOptions)
         {
             return eventFlowOptions.UseSnapshotStore<InMemorySnapshotPersistence>(Lifetime.Singleton);
+        }
+
+        private static bool IsSnapshotUpgraderInterface(Type type)
+        {
+            return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(ISnapshotUpgrader<,>);
         }
     }
 }

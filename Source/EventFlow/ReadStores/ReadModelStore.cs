@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -31,9 +31,9 @@ using EventFlow.Logs;
 namespace EventFlow.ReadStores
 {
     public abstract class ReadModelStore<TReadModel> : IReadModelStore<TReadModel>
-        where TReadModel : class, IReadModel, new()
+        where TReadModel : class, IReadModel
     {
-        protected ILog Log { get; private set; }
+        protected ILog Log { get; }
 
         protected ReadModelStore(
             ILog log)
@@ -45,13 +45,17 @@ namespace EventFlow.ReadStores
             string id,
             CancellationToken cancellationToken);
 
+        public abstract Task DeleteAsync(
+            string id,
+            CancellationToken cancellationToken);
+
         public abstract Task DeleteAllAsync(
             CancellationToken cancellationToken);
 
-        public abstract Task UpdateAsync(
-            IReadOnlyCollection<ReadModelUpdate> readModelUpdates,
-            IReadModelContext readModelContext,
-            Func<IReadModelContext, IReadOnlyCollection<IDomainEvent>, ReadModelEnvelope<TReadModel>, CancellationToken, Task<ReadModelEnvelope<TReadModel>>> updateReadModel,
+        public abstract Task UpdateAsync(IReadOnlyCollection<ReadModelUpdate> readModelUpdates,
+            IReadModelContextFactory readModelContextFactory,
+            Func<IReadModelContext, IReadOnlyCollection<IDomainEvent>, ReadModelEnvelope<TReadModel>, CancellationToken,
+                Task<ReadModelUpdateResult<TReadModel>>> updateReadModel,
             CancellationToken cancellationToken);
     }
 }

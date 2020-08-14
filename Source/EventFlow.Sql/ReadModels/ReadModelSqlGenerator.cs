@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -29,22 +29,44 @@ using System.Linq;
 using System.Reflection;
 using EventFlow.Extensions;
 using EventFlow.ReadStores;
+using EventFlow.Sql.Extensions;
 using EventFlow.Sql.ReadModels.Attributes;
 
 namespace EventFlow.Sql.ReadModels
 {
     public class ReadModelSqlGenerator : IReadModelSqlGenerator
     {
-        private static readonly ConcurrentDictionary<Type, string> TableNames = new ConcurrentDictionary<Type, string>();
-        private static readonly ConcurrentDictionary<Type, IReadOnlyCollection<PropertyInfo>> PropertyInfos = new ConcurrentDictionary<Type, IReadOnlyCollection<PropertyInfo>>();
-        private static readonly ConcurrentDictionary<Type, string> IdentityColumns = new ConcurrentDictionary<Type, string>();
-        private readonly Dictionary<Type, string> _insertSqls = new Dictionary<Type, string>();
-        private readonly Dictionary<Type, string> _purgeSqls = new Dictionary<Type, string>();
-        private readonly Dictionary<Type, string> _selectSqls = new Dictionary<Type, string>();
-        private readonly Dictionary<Type, string> _updateSqls = new Dictionary<Type, string>();
+        protected ReadModelSqlGeneratorConfiguration Configuration;
 
-        public string CreateInsertSql<TReadModel>()
-            where TReadModel : IReadModel
+        private static readonly ConcurrentDictionary<Type, string>
+            TableNames = new ConcurrentDictionary<Type, string>();
+
+        private static readonly ConcurrentDictionary<Type, IReadOnlyCollection<PropertyInfo>> PropertyInfos =
+            new ConcurrentDictionary<Type, IReadOnlyCollection<PropertyInfo>>();
+
+        private static readonly ConcurrentDictionary<Type, string> IdentityColumns =
+            new ConcurrentDictionary<Type, string>();
+
+        private static readonly ConcurrentDictionary<Type, string> VersionColumns =
+            new ConcurrentDictionary<Type, string>();
+
+        private readonly ConcurrentDictionary<Type, string> _insertSqls = new ConcurrentDictionary<Type, string>();
+        private readonly ConcurrentDictionary<Type, string> _purgeSqls = new ConcurrentDictionary<Type, string>();
+        private readonly ConcurrentDictionary<Type, string> _deleteSqls = new ConcurrentDictionary<Type, string>();
+        private readonly ConcurrentDictionary<Type, string> _selectSqls = new ConcurrentDictionary<Type, string>();
+        private readonly ConcurrentDictionary<Type, string> _updateSqls = new ConcurrentDictionary<Type, string>();
+
+        public ReadModelSqlGenerator()
+        {
+            Configuration = new ReadModelSqlGeneratorConfiguration("[", "]", "[", "]");
+        }
+
+        protected ReadModelSqlGenerator(ReadModelSqlGeneratorConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
+        public string CreateInsertSql<TReadModel>() where TReadModel : IReadModel
         {
             var readModelType = typeof(TReadModel);
             string sql;
@@ -53,18 +75,22 @@ namespace EventFlow.Sql.ReadModels
                 return sql;
             }
 
-            sql = string.Format(
-                "INSERT INTO {0} ({1}) VALUES ({2})",
-                GetTableName<TReadModel>(),
-                string.Join(", ", GetInsertColumns<TReadModel>()),
-                string.Join(", ", GetInsertColumns<TReadModel>().Select(c => $"@{c}")));
+            var insertColumns = GetInsertColumns<TReadModel>().ToList();
+
+            var columnList = insertColumns.SelectToQuotedColumns(
+                    Configuration.ColumnQuotedIdentifierPrefix,
+                    Configuration.ColumnQuotedIdentifierSuffix)
+                .JoinToSql();
+            var parameterList = insertColumns.SelectToSqlParameters().JoinToSql();
+
+            sql = $"INSERT INTO {GetTableName<TReadModel>()} ({columnList}) VALUES ({parameterList})";
+
             _insertSqls[readModelType] = sql;
 
             return sql;
         }
 
-        public string CreateSelectSql<TReadModel>()
-            where TReadModel : IReadModel
+        public string CreateSelectSql<TReadModel>() where TReadModel : IReadModel
         {
             var readModelType = typeof(TReadModel);
             string sql;
@@ -73,61 +99,77 @@ namespace EventFlow.Sql.ReadModels
                 return sql;
             }
 
-            sql = string.Format(
-                "SELECT * FROM {0} WHERE {1} = @EventFlowReadModelId",
-                GetTableName<TReadModel>(),
-                GetIdentityColumn<TReadModel>());
+            var tableName = GetTableName<TReadModel>();
+            var identityColumn = GetIdentityColumn<TReadModel>();
+
+            sql = $"SELECT * FROM {tableName} WHERE {identityColumn} = @EventFlowReadModelId";
+
             _selectSqls[readModelType] = sql;
 
             return sql;
         }
 
-        public string CreateUpdateSql<TReadModel>()
-            where TReadModel : IReadModel
+        public string CreateDeleteSql<TReadModel>() where TReadModel : IReadModel
         {
             var readModelType = typeof(TReadModel);
-            string sql;
-            if (_updateSqls.TryGetValue(readModelType, out sql))
+            if (_deleteSqls.TryGetValue(readModelType, out var sql))
+            {
+                return sql;
+            }
+
+            sql =
+                $"DELETE FROM {GetTableName<TReadModel>()} WHERE {Configuration.ColumnQuotedIdentifierPrefix}{GetIdentityColumn<TReadModel>()}{Configuration.ColumnQuotedIdentifierSuffix} = @EventFlowReadModelId";
+            _deleteSqls[readModelType] = sql;
+
+            return sql;
+        }
+
+        public string CreateUpdateSql<TReadModel>() where TReadModel : IReadModel
+        {
+            var readModelType = typeof(TReadModel);
+            if (_updateSqls.TryGetValue(readModelType, out var sql))
             {
                 return sql;
             }
 
             var identityColumn = GetIdentityColumn<TReadModel>();
-            sql = string.Format(
-                "UPDATE {0} SET {1} WHERE {2} = @{2}",
-                GetTableName<TReadModel>(),
-                string.Join(", ", GetUpdateColumns<TReadModel>().Select(c => string.Format("{0} = @{0}", c))),
-                identityColumn);
+            var versionColumn = GetVersionColumn<TReadModel>();
+            var versionCheck = string.IsNullOrEmpty(versionColumn)
+                ? string.Empty
+                : $"AND {Configuration.ColumnQuotedIdentifierPrefix}{versionColumn}{Configuration.ColumnQuotedIdentifierSuffix} = @_PREVIOUS_VERSION";
+
+            var updateColumns = GetUpdateColumns<TReadModel>()
+                .SelectToUpdateQuotedColumnsByParameters(
+                    Configuration.ColumnQuotedIdentifierPrefix,
+                    Configuration.ColumnQuotedIdentifierSuffix)
+                .JoinToSql();
+
+            var tableName = GetTableName<TReadModel>();
+
+            sql = $"UPDATE {tableName} SET {updateColumns} WHERE {Configuration.ColumnQuotedIdentifierPrefix}{identityColumn}{Configuration.ColumnQuotedIdentifierSuffix} = @{identityColumn} {versionCheck}";
+
             _updateSqls[readModelType] = sql;
 
             return sql;
         }
 
-        public string CreatePurgeSql<TReadModel>()
-            where TReadModel : IReadModel
+        public string CreatePurgeSql<TReadModel>() where TReadModel : IReadModel
         {
-            return _purgeSqls.GetOrCreate(
-                typeof(TReadModel),
-                t => $"DELETE FROM {GetTableName(t)}");
+            return _purgeSqls.GetOrCreate(typeof(TReadModel), t => $"DELETE FROM {GetTableName(t)}");
         }
 
-        protected IEnumerable<string> GetInsertColumns<TReadModel>()
-            where TReadModel : IReadModel
+        protected IEnumerable<string> GetInsertColumns<TReadModel>() where TReadModel : IReadModel
         {
-            return GetPropertyInfos(typeof(TReadModel))
-                .Select(p => p.Name);
+            return GetPropertyInfos(typeof(TReadModel)).Select(p => p.Name);
         }
 
-        protected IEnumerable<string> GetUpdateColumns<TReadModel>()
-            where TReadModel : IReadModel
+        protected IEnumerable<string> GetUpdateColumns<TReadModel>() where TReadModel : IReadModel
         {
             var identityColumn = GetIdentityColumn<TReadModel>();
-            return GetInsertColumns<TReadModel>()
-                .Where(c => c != identityColumn);
+            return GetInsertColumns<TReadModel>().Where(c => c != identityColumn);
         }
 
-        public string GetTableName<TReadModel>()
-            where TReadModel : IReadModel
+        public string GetTableName<TReadModel>() where TReadModel : IReadModel
         {
             return GetTableName(typeof(TReadModel));
         }
@@ -138,10 +180,16 @@ namespace EventFlow.Sql.ReadModels
                 readModelType,
                 t =>
                 {
+                    var qip = Configuration.TableQuotedIdentifierPrefix;
+                    var qis = Configuration.TableQuotedIdentifierSuffix;
+
                     var tableAttribute = t.GetTypeInfo().GetCustomAttribute<TableAttribute>(false);
-                    return tableAttribute != null
-                        ? $"[{tableAttribute.Name}]"
-                        : $"[ReadModel-{t.Name.Replace("ReadModel", string.Empty)}]";
+                    var table = string.IsNullOrEmpty(tableAttribute?.Name)
+                        ? $"ReadModel-{t.Name.Replace("ReadModel", string.Empty)}"
+                        : tableAttribute.Name;
+                    return string.IsNullOrEmpty(tableAttribute?.Schema)
+                        ? $"{qip}{table}{qis}"
+                        : $"{qip}{tableAttribute?.Schema}{qis}.{qip}{table}{qis}";
                 });
         }
 
@@ -151,8 +199,30 @@ namespace EventFlow.Sql.ReadModels
                 typeof(TReadModel),
                 t =>
                 {
-                    var propertyInfo = GetPropertyInfos(t).SingleOrDefault(pi => pi.GetCustomAttributes().Any(a => a is SqlReadModelIdentityColumnAttribute));
+                    var propertyInfo = GetPropertyInfos(t)
+                        .SingleOrDefault(
+                            pi => pi.GetCustomAttributes().Any(a => a is SqlReadModelIdentityColumnAttribute));
                     return propertyInfo?.Name ?? "AggregateId";
+                });
+        }
+
+        private string GetVersionColumn<TReadModel>()
+        {
+            return VersionColumns.GetOrAdd(
+                typeof(TReadModel),
+                t =>
+                {
+                    var propertyInfo = GetPropertyInfos(t)
+                        .SingleOrDefault(
+                            pi => pi.GetCustomAttributes().Any(a => a is SqlReadModelVersionColumnAttribute));
+                    if (propertyInfo != null)
+                    {
+                        return propertyInfo.Name;
+                    }
+
+                    return GetPropertyInfos(t).Any(n => n.Name == "LastAggregateSequenceNumber")
+                        ? "LastAggregateSequenceNumber"
+                        : string.Empty;
                 });
         }
 
@@ -162,8 +232,7 @@ namespace EventFlow.Sql.ReadModels
                 readModelType,
                 t =>
                 {
-                    return t
-                        .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                    return t.GetProperties(BindingFlags.Instance | BindingFlags.Public)
                         .Where(p => !p.GetCustomAttributes().Any(a => a is SqlReadModelIgnoreColumnAttribute))
                         .OrderBy(p => p.Name)
                         .ToList();

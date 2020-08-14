@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -57,7 +57,8 @@ namespace EventFlow.Extensions
             predicate = predicate ?? (t => true);
             var metadataProviderTypes = fromAssembly
                 .GetTypes()
-                .Where(t => typeof(IMetadataProvider).GetTypeInfo().IsAssignableFrom(t))
+                .Where(IsMetadataProvider)
+                .Where(t => !t.HasConstructorParameterOfType(IsMetadataProvider))
                 .Where(t => predicate(t));
             return eventFlowOptions.AddMetadataProviders(metadataProviderTypes);
         }
@@ -66,18 +67,22 @@ namespace EventFlow.Extensions
             this IEventFlowOptions eventFlowOptions,
             IEnumerable<Type> metadataProviderTypes)
         {
-            foreach (var metadataProviderType in metadataProviderTypes)
+            foreach (var t in metadataProviderTypes)
             {
-                var t = metadataProviderType;
                 if (t.GetTypeInfo().IsAbstract) continue;
-                if (!typeof(IMetadataProvider).GetTypeInfo().IsAssignableFrom(t))
+                if (!t.IsMetadataProvider())
                 {
-                    throw new ArgumentException($"Type '{metadataProviderType.PrettyPrint()}' is not an '{typeof(IMetadataProvider).PrettyPrint()}'");
+                    throw new ArgumentException($"Type '{t.PrettyPrint()}' is not an '{typeof(IMetadataProvider).PrettyPrint()}'");
                 }
 
                 eventFlowOptions.RegisterServices(sr => sr.Register(typeof(IMetadataProvider), t));
             }
             return eventFlowOptions;
+        }
+
+        private static bool IsMetadataProvider(this Type type)
+        {
+            return type.IsAssignableTo<IMetadataProvider>();
         }
     }
 }

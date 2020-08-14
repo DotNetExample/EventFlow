@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -53,24 +53,24 @@ namespace EventFlow.TestHelpers.Suites
         public void DeleteSnapshotAsync_GetSnapshotAsync_NoneExistingSnapshotDoesNotThrow()
         {
             // Act + Assert
-            Assert.DoesNotThrow(() => SnapshotPersistence.DeleteSnapshotAsync(
+            Assert.DoesNotThrowAsync(async () => await SnapshotPersistence.DeleteSnapshotAsync(
                 typeof(ThingyAggregate),
                 ThingyId.New,
-                CancellationToken.None).Wait());
+                CancellationToken.None));
         }
 
         [Test]
         public void PurgeSnapshotsAsync_NoneExistingSnapshotDoesNotThrow()
         {
             // Act + Assert
-            Assert.DoesNotThrow(() => SnapshotPersistence.PurgeSnapshotsAsync(typeof(ThingyAggregate), CancellationToken.None).Wait());
+            Assert.DoesNotThrowAsync(async () => await SnapshotPersistence.PurgeSnapshotsAsync(typeof(ThingyAggregate), CancellationToken.None));
         }
 
         [Test]
         public void PurgeSnapshotsAsync_EmptySnapshotStoreDoesNotThrow()
         {
             // Act + Assert
-            Assert.DoesNotThrow(() => SnapshotPersistence.PurgeSnapshotsAsync(CancellationToken.None).Wait());
+            Assert.DoesNotThrowAsync(async () => await SnapshotPersistence.PurgeSnapshotsAsync(CancellationToken.None));
         }
 
         [Test]
@@ -197,7 +197,7 @@ namespace EventFlow.TestHelpers.Suites
 
             // Assert
             thingyAggregate.Version.Should().Be(expectedVersion);
-            thingyAggregate.PingsReceived.ShouldAllBeEquivalentTo(pingIds);
+            thingyAggregate.PingsReceived.Should().BeEquivalentTo(pingIds);
             thingyAggregate.SnapshotVersions.Should().Contain(new[] {ThingySnapshotVersion.Version1, ThingySnapshotVersion.Version2});
         }
 

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -29,8 +29,6 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using EventFlow.Configuration;
-using EventFlow.Core;
-using EventFlow.Core.Caching;
 using EventFlow.EventStores;
 using EventFlow.Extensions;
 using EventFlow.Logs;
@@ -58,32 +56,37 @@ namespace EventFlow.ReadStores
 
         public Task PurgeAsync<TReadModel>(
             CancellationToken cancellationToken)
-            where TReadModel : class, IReadModel, new()
+            where TReadModel : class, IReadModel
         {
             return PurgeAsync(typeof(TReadModel), cancellationToken);
         }
 
-        public Task PurgeAsync(
+        public async Task PurgeAsync(
             Type readModelType,
             CancellationToken cancellationToken)
         {
-            var readModelStoreType = typeof(IReadModelStore<>).MakeGenericType(readModelType);
-
-            var readModelStores = _resolver.ResolveAll(readModelStoreType)
-                .Select(s => (IReadModelStore)s)
-                .ToList();
-            if (!readModelStores.Any())
-            {
-                throw new ArgumentException($"Could not find any read stores for read model '{readModelType.PrettyPrint()}'");
-            }
+            var readModelStores = ResolveReadModelStores(readModelType);
 
             var deleteTasks = readModelStores.Select(s => s.DeleteAllAsync(cancellationToken));
-            return Task.WhenAll(deleteTasks);
+            await Task.WhenAll(deleteTasks).ConfigureAwait(false);
+        }
+
+        public async Task DeleteAsync(
+            string id,
+            Type readModelType,
+            CancellationToken cancellationToken)
+        {
+            var readModelStores = ResolveReadModelStores(readModelType);
+
+            _log.Verbose(() => $"Deleting read model {readModelType.PrettyPrint()} with ID '{id}'");
+
+            var deleteTasks = readModelStores.Select(s => s.DeleteAsync(id, cancellationToken));
+            await Task.WhenAll(deleteTasks).ConfigureAwait(false);
         }
 
         public Task PopulateAsync<TReadModel>(
             CancellationToken cancellationToken)
-            where TReadModel : class, IReadModel, new()
+            where TReadModel : class, IReadModel
         {
             return PopulateAsync(typeof(TReadModel), cancellationToken);
         }
@@ -93,12 +96,19 @@ namespace EventFlow.ReadStores
             CancellationToken cancellationToken)
         {
             var stopwatch = Stopwatch.StartNew();
-            var readStoreManagers = ResolveReadStoreManager(readModelType);
+            var readStoreManagers = ResolveReadStoreManagers(readModelType);
+
+            var readModelTypes = new[]
+            {
+                typeof( IAmReadModelFor<,,> ),
+                typeof( IAmAsyncReadModelFor<,,> )
+            };
 
             var aggregateEventTypes = new HashSet<Type>(readModelType
                 .GetTypeInfo()
                 .GetInterfaces()
-                .Where(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(IAmReadModelFor<,,>))
+                .Where(i => i.GetTypeInfo().IsGenericType 
+                            && readModelTypes.Contains(i.GetGenericTypeDefinition()))
                 .Select(i => i.GetTypeInfo().GetGenericArguments()[2]));
 
             _log.Verbose(() => string.Format(
@@ -155,7 +165,23 @@ namespace EventFlow.ReadStores
                 relevantEvents);
         }
 
-        private IReadOnlyCollection<IReadStoreManager> ResolveReadStoreManager(
+        private IReadOnlyCollection<IReadModelStore> ResolveReadModelStores(
+            Type readModelType)
+        {
+            var readModelStoreType = typeof(IReadModelStore<>).MakeGenericType(readModelType);
+            var readModelStores = _resolver.ResolveAll(readModelStoreType)
+                .Select(s => (IReadModelStore)s)
+                .ToList();
+
+            if (!readModelStores.Any())
+            {
+                throw new ArgumentException($"Could not find any read stores for read model '{readModelType.PrettyPrint()}'");
+            }
+
+            return readModelStores;
+        }
+
+        private IReadOnlyCollection<IReadStoreManager> ResolveReadStoreManagers(
             Type readModelType)
         {
             var readStoreManagers = _resolver.Resolve<IEnumerable<IReadStoreManager>>()

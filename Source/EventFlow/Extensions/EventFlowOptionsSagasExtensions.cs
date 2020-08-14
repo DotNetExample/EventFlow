@@ -1,19 +1,19 @@
-﻿// The MIT License (MIT)
-//
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// The MIT License (MIT)
+// 
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
-//
+// 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
 // the Software without restriction, including without limitation the rights to
 // use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
 // the Software, and to permit persons to whom the Software is furnished to do so,
 // subject to the following conditions:
-//
+// 
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-//
+// 
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
 // FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
@@ -39,7 +39,7 @@ namespace EventFlow.Extensions
             predicate = predicate ?? (t => true);
             var sagaTypes = fromAssembly
                 .GetTypes()
-                .Where(t => !t.GetTypeInfo().IsAbstract && typeof(ISaga).GetTypeInfo().IsAssignableFrom(t))
+                .Where(t => !t.GetTypeInfo().IsAbstract && t.IsAssignableTo<ISaga>())
                 .Where(t => predicate(t));
 
             return eventFlowOptions.AddSagas(sagaTypes);
@@ -60,7 +60,8 @@ namespace EventFlow.Extensions
             predicate = predicate ?? (t => true);
             var sagaTypes = fromAssembly
                 .GetTypes()
-                .Where(t => !t.GetTypeInfo().IsAbstract && typeof(ISagaLocator).GetTypeInfo().IsAssignableFrom(t))
+                .Where(t => !t.GetTypeInfo().IsAbstract && t.IsAssignableTo<ISagaLocator>())
+                .Where(t => !t.HasConstructorParameterOfType(x => x.IsAssignableTo<ISagaLocator>()))
                 .Where(t => predicate(t));
 
             return eventFlowOptions.AddSagaLocators(sagaTypes);

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -37,7 +37,7 @@ using EventFlow.Examples.Shipping.Queries.InMemory;
 using EventFlow.Extensions;
 using EventFlow.Logs;
 using EventFlow.TestHelpers;
-using FluentAssertions;
+using FluentAssertions.Extensions;
 using NUnit.Framework;
 
 namespace EventFlow.Examples.Shipping.Tests.IntegrationTests

@@ -1,7 +1,7 @@
 // The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -73,7 +73,7 @@ namespace EventFlow.Elasticsearch.Tests.IntegrationTests.QueryHandlers
                 .RequestConfiguration(c => c
                     .AllowedStatusCodes((int)HttpStatusCode.NotFound))
                 .Index(indexName)
-                .Query(q => q.Term(m => m.ThingyId, query.ThingyId.Value)), 
+                .Query(q => q.Term(m => m.ThingyId.Suffix("keyword"), query.ThingyId.Value)),
                     cancellationToken)
                 .ConfigureAwait(false);
 

@@ -1,7 +1,7 @@
 ﻿// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -24,7 +24,6 @@
 using System;
 using System.IO;
 using System.Threading;
-using System.Threading.Tasks;
 using EventFlow.Configuration;
 using EventFlow.Core;
 using EventFlow.Extensions;
@@ -33,6 +32,7 @@ using EventFlow.SQLite.Extensions;
 using EventFlow.SQLite.Tests.IntegrationTests.ReadStores.QueryHandlers;
 using EventFlow.SQLite.Tests.IntegrationTests.ReadStores.ReadModels;
 using EventFlow.TestHelpers;
+using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Entities;
 using EventFlow.TestHelpers.Suites;
 using NUnit.Framework;
@@ -42,6 +42,8 @@ namespace EventFlow.SQLite.Tests.IntegrationTests.ReadStores
     [Category(Categories.Integration)]
     public class SQLiteReadStoreTests : TestSuiteForReadModelStore
     {
+        protected override Type ReadModelType { get; } = typeof(SQLiteThingyReadModel);
+
         private string _databasePath;
 
         protected override IRootResolver CreateRootResolver(IEventFlowOptions eventFlowOptions)
@@ -82,16 +84,6 @@ namespace EventFlow.SQLite.Tests.IntegrationTests.ReadStores
             connection.ExecuteAsync(Label.Named("create-table"), CancellationToken.None, sqlThingyMessage, null).Wait();
 
             return resolver;
-        }
-
-        protected override Task PurgeTestAggregateReadModelAsync()
-        {
-            return ReadModelPopulator.PurgeAsync<SQLiteThingyReadModel>(CancellationToken.None);
-        }
-
-        protected override Task PopulateTestAggregateReadModelAsync()
-        {
-            return ReadModelPopulator.PopulateAsync<SQLiteThingyReadModel>(CancellationToken.None);
         }
 
         [TearDown]

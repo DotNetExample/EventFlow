@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -34,17 +34,17 @@ using Microsoft.SqlServer.Server;
 namespace EventFlow.MsSql.Integrations
 {
     internal class TableParameter<TRow> : SqlMapper.IDynamicParameters
-        where TRow : class, new()
+        where TRow : class
     {
         private readonly string _name;
         private readonly IEnumerable<TRow> _rows;
         private readonly SqlMapper.IDynamicParameters _otherParameters;
 
         // ReSharper disable StaticMemberInGenericType
-        // The PropertyInfos and SqlMetaDatas static fields are dependant on the TRow type
+        // The PropertyInfos and SqlMetaDatas static fields are dependent on the TRow type
         private static readonly Dictionary<SqlDbType, Action<SqlDataRecord, int, object>> SqlDataRecordSetters = new Dictionary<SqlDbType, Action<SqlDataRecord, int, object>>
             {
-                {SqlDbType.Text, (r, i, o) => r.SetString(i, (string)o)},
+                {SqlDbType.NText, (r, i, o) => r.SetString(i, (string)o)},
                 {SqlDbType.DateTimeOffset, (r, i, o) => r.SetDateTimeOffset(i, (DateTimeOffset)o)},
                 {SqlDbType.Int, (r, i, o) => r.SetInt32(i, (int)o)},
                 {SqlDbType.BigInt, (r, i, o) => r.SetInt64(i, (long)o)},
@@ -54,7 +54,7 @@ namespace EventFlow.MsSql.Integrations
             {
                 {typeof(Guid), SqlDbType.UniqueIdentifier},
                 {typeof(int), SqlDbType.Int},
-                {typeof(string), SqlDbType.Text},
+                {typeof(string), SqlDbType.NText},
                 {typeof(long), SqlDbType.BigInt},
                 {typeof(DateTime), SqlDbType.DateTime},
                 {typeof(DateTimeOffset), SqlDbType.DateTimeOffset},

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="../Common.props" />
   <PropertyGroup>
-    <TargetFrameworks>net451;netstandard1.6</TargetFrameworks>
+    <TargetFrameworks>net452;netstandard1.6;netstandard2.0;netcoreapp3.0;netcoreapp3.1</TargetFrameworks>
     <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
     <GenerateAssemblyInfo>True</GenerateAssemblyInfo>
     <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
@@ -9,27 +9,40 @@
     <Title>EventFlow</Title>
     <Authors>Rasmus Mikkelsen</Authors>
     <Company>Rasmus Mikkelsen</Company>
-    <Copyright>Copyright (c) Rasmus Mikkelsen 2015 - 2017</Copyright>
-    <Description>Async/await first CQRS+ES and DDD framework for .NET - http://geteventflow.net/</Description>
+    <Copyright>Copyright (c) Rasmus Mikkelsen 2015 - 2019</Copyright>
+    <Description>Async/await first CQRS+ES and DDD framework for .NET - https://docs.geteventflow.net/</Description>
     <PackageTags>CQRS ES event sourcing</PackageTags>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/eventflow/EventFlow</RepositoryUrl>
-    <PackageProjectUrl>http://docs.geteventflow.net/</PackageProjectUrl>
+    <PackageProjectUrl>https://docs.geteventflow.net/</PackageProjectUrl>
     <PackageIconUrl>https://raw.githubusercontent.com/eventflow/EventFlow/develop/icon-128.png</PackageIconUrl>
-    <PackageLicenseUrl>https://raw.githubusercontent.com/eventflow/EventFlow/develop/LICENSE</PackageLicenseUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <NeutralLanguage>en-US</NeutralLanguage>
-    <PackageReleaseNotes>UPDATED BY BUILD</PackageReleaseNotes>    
+    <PackageReleaseNotes>UPDATED BY BUILD</PackageReleaseNotes>
+    <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\EventFlow.xml</DocumentationFile>
+    <NoWarn>1701;1702;1705;1591</NoWarn>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <DefineConstants>LIBLOG_PORTABLE</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="10.0.2" />
-    <PackageReference Include="JetBrains.Annotations" Version="10.4.0">
+    <PackageReference Include="Microsoft.CSharp" Version="4.4.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
+    <PackageReference Include="JetBrains.Annotations" Version="11.0.0">
       <PrivateAssets>All</PrivateAssets>
     </PackageReference>
   </ItemGroup>
-  <ItemGroup>
-    <Reference Include="Microsoft.CSharp" />
-  </ItemGroup>
-  <ItemGroup Condition="'$(TargetFramework)' == 'net451'">
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net452'">
     <Reference Include="System.Runtime.Caching" />
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
   </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard1.6'">
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
+  </ItemGroup>
+
 </Project>

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -35,6 +35,7 @@ using EventFlow.Extensions;
 using EventFlow.Subscribers;
 using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Commands;
+using EventFlow.TestHelpers.Aggregates.Entities;
 using EventFlow.TestHelpers.Aggregates.Events;
 using EventFlow.TestHelpers.Aggregates.ValueObjects;
 using EventFlow.TestHelpers.Extensions;
@@ -101,6 +102,24 @@ namespace EventFlow.TestHelpers.Suites
             loadedTestAggregate.IsNew.Should().BeFalse();
             loadedTestAggregate.Version.Should().Be(1);
             loadedTestAggregate.PingsReceived.Count.Should().Be(1);
+        }
+
+        [Test]
+        public async Task EventsCanContainUnicodeCharacters()
+        {
+            // Arrange
+            var id = ThingyId.New;
+            var testAggregate = await LoadAggregateAsync(id).ConfigureAwait(false);
+            var message = new ThingyMessage(ThingyMessageId.New, "😉");
+
+            testAggregate.AddMessage(message);
+            await testAggregate.CommitAsync(EventStore, SnapshotStore, SourceId.New, CancellationToken.None).ConfigureAwait(false);
+
+            // Act
+            var loadedTestAggregate = await LoadAggregateAsync(id).ConfigureAwait(false);
+
+            // Assert
+            loadedTestAggregate.Messages.Single().Message.Should().Be("😉");
         }
 
         [Test]
@@ -272,6 +291,60 @@ namespace EventFlow.TestHelpers.Suites
         }
 
         [Test]
+        public async Task AggregatesCanUpdatedAfterOptimisticConcurrency()
+        {
+            // Arrange
+            var id = ThingyId.New;
+            var pingId1 = PingId.New;
+            var pingId2 = PingId.New;
+            var aggregate1 = await LoadAggregateAsync(id).ConfigureAwait(false);
+            var aggregate2 = await LoadAggregateAsync(id).ConfigureAwait(false);
+            aggregate1.Ping(pingId1);
+            aggregate2.Ping(pingId2);
+            await aggregate1.CommitAsync(EventStore, SnapshotStore, SourceId.New, CancellationToken.None).ConfigureAwait(false);
+            await ThrowsExceptionAsync<OptimisticConcurrencyException>(() => aggregate2.CommitAsync(EventStore, SnapshotStore, SourceId.New, CancellationToken.None)).ConfigureAwait(false);
+
+            // Act
+            aggregate1 = await LoadAggregateAsync(id).ConfigureAwait(false);
+            aggregate1.PingsReceived.Single().Should().Be(pingId1);
+            aggregate1.Ping(pingId2);
+            await aggregate1.CommitAsync(EventStore, SnapshotStore, SourceId.New, CancellationToken.None).ConfigureAwait(false);
+
+            // Assert
+            aggregate1 = await LoadAggregateAsync(id).ConfigureAwait(false);
+            aggregate1.PingsReceived.Should().BeEquivalentTo(new[] {pingId1, pingId2});
+        }
+
+        [Test]
+        public async Task MultipleScopes()
+        {
+            // Arrange
+            var id = ThingyId.New;
+            var pingId1 = PingId.New;
+            var pingId2 = PingId.New;
+
+            // Act
+            using (var scopedResolver = Resolver.BeginScope())
+            {
+                var commandBus = scopedResolver.Resolve<ICommandBus>();
+                await commandBus.PublishAsync(
+                    new ThingyPingCommand(id, pingId1))
+                    .ConfigureAwait(false);
+            }
+            using (var scopedResolver = Resolver.BeginScope())
+            {
+                var commandBus = scopedResolver.Resolve<ICommandBus>();
+                await commandBus.PublishAsync(
+                        new ThingyPingCommand(id, pingId2))
+                    .ConfigureAwait(false);
+            }
+
+            // Assert
+            var aggregate = await LoadAggregateAsync(id).ConfigureAwait(false);
+            aggregate.PingsReceived.Should().BeEquivalentTo(new []{pingId1, pingId2});
+        }
+
+        [Test]
         public async Task PublishedDomainEventsHaveAggregateSequenceNumbers()
         {
             // Arrange
@@ -285,7 +358,7 @@ namespace EventFlow.TestHelpers.Suites
 
             // Assert
             PublishedDomainEvents.Count.Should().Be(10);
-            PublishedDomainEvents.Select(d => d.AggregateSequenceNumber).ShouldAllBeEquivalentTo(Enumerable.Range(1, 10));
+            PublishedDomainEvents.Select(d => d.AggregateSequenceNumber).Should().BeEquivalentTo(Enumerable.Range(1, 10));
         }
 
         [Test]
@@ -306,7 +379,36 @@ namespace EventFlow.TestHelpers.Suites
 
             // Assert
             PublishedDomainEvents.Count.Should().Be(10);
-            PublishedDomainEvents.Select(d => d.AggregateSequenceNumber).ShouldAllBeEquivalentTo(Enumerable.Range(11, 10));
+            PublishedDomainEvents.Select(d => d.AggregateSequenceNumber).Should().BeEquivalentTo(Enumerable.Range(11, 10));
+        }
+
+        [Test]
+        public virtual async Task LoadAllEventsAsyncFindsEventsAfterLargeGaps()
+        {
+            // Arrange
+            var ids = Enumerable.Range(0, 10)
+                .Select(i => ThingyId.New)
+                .ToArray();
+
+            foreach (var id in ids)
+            {
+                var command = new ThingyPingCommand(id, PingId.New);
+                await CommandBus.PublishAsync(command).ConfigureAwait(false);
+            }
+
+            foreach (var id in ids.Skip(1).Take(5))
+            {
+                await EventPersistence.DeleteEventsAsync(id, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+
+            // Act
+            var result = await EventStore
+                .LoadAllEventsAsync(GlobalPosition.Start, 5, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            // Assert
+            result.DomainEvents.Should().HaveCount(5);
         }
 
         [SetUp]

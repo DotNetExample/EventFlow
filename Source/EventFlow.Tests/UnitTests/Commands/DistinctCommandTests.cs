@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -23,6 +23,7 @@
 
 using System;
 using System.Collections.Generic;
+using EventFlow.Aggregates.ExecutionResults;
 using EventFlow.Commands;
 using EventFlow.Extensions;
 using EventFlow.TestHelpers;
@@ -32,11 +33,10 @@ using NUnit.Framework;
 
 namespace EventFlow.Tests.UnitTests.Commands
 {
-    [Timeout(10000)]
     [Category(Categories.Unit)]
     public class DistinctCommandTests
     {
-        public class MyDistinctCommand : DistinctCommand<ThingyAggregate, ThingyId>
+        public class MyDistinctCommand : DistinctCommand<ThingyAggregate, ThingyId, IExecutionResult>
         {
             public int MagicNumber { get; }
 

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -25,8 +25,6 @@ using EventFlow.Autofac.Registrations;
 using EventFlow.Configuration;
 using EventFlow.TestHelpers;
 using EventFlow.TestHelpers.Suites;
-using FluentAssertions;
-using Moq;
 using NUnit.Framework;
 
 namespace EventFlow.Autofac.Tests.UnitTests
@@ -34,40 +32,6 @@ namespace EventFlow.Autofac.Tests.UnitTests
     [Category(Categories.Unit)]
     public class AutofacServiceRegistrationTests : TestSuiteForServiceRegistration
     {
-        [Test]
-        public void ValidateRegistrationsShouldDispose()
-        {
-            // Arrange
-            var service = new Mock<I>();
-            var createdCount = 0;
-            Sut.Register(_ =>
-                {
-                    createdCount++;
-                    return service.Object;
-                });
-
-            // Act and Assert
-            using (var resolver = Sut.CreateResolver(true))
-            {
-                createdCount.Should().Be(1);
-                service.Verify(m => m.Dispose(), Times.Once);
-
-                var resolvedService = resolver.Resolve<I>();
-                createdCount.Should().Be(2);
-                resolvedService.Should().BeSameAs(service.Object);
-
-                using (var scopedResolver = resolver.BeginScope())
-                {
-                    var nestedResolvedService = scopedResolver.Resolve<I>();
-                    createdCount.Should().Be(3);
-                    nestedResolvedService.Should().BeSameAs(service.Object);
-                }
-                service.Verify(m => m.Dispose(), Times.Exactly(2));
-            }
-
-            service.Verify(m => m.Dispose(), Times.Exactly(3));
-        }
-
         protected override IServiceRegistration CreateSut()
         {
             return new AutofacServiceRegistration();

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -157,27 +157,17 @@ namespace EventFlow.Tests.IntegrationTests.Sagas
             // Assert - saga
             var thingySaga = await LoadSagaAsync(thingyId).ConfigureAwait(false);
             thingySaga.State.Should().Be(SagaState.Completed);
-            thingySaga.PingIdsSinceStarted.ShouldAllBeEquivalentTo(pingsWithRunningSaga);
+            thingySaga.PingIdsSinceStarted.Should().BeEquivalentTo(pingsWithRunningSaga);
 
             // Assert - aggregate
             var thingyAggregate = await LoadAggregateAsync(thingyId).ConfigureAwait(false);
-            thingyAggregate.PingsReceived.ShouldAllBeEquivalentTo(
+            thingyAggregate.PingsReceived.Should().BeEquivalentTo(
                 pingsWithNewSaga.Concat(pingsWithRunningSaga).Concat(pingsWithCompletedSaga));
             var receivedSagaPingIds = thingyAggregate.Messages
                 .Select(m => PingId.With(m.Message))
                 .ToList();
             receivedSagaPingIds.Should().HaveCount(3);
-            receivedSagaPingIds.ShouldAllBeEquivalentTo(pingsWithRunningSaga);
-        }
-
-        private Task<ThingySaga> LoadSagaAsync(ThingyId thingyId)
-        {
-            // This is specified in the ThingySagaLocator
-            var expectedThingySagaId = new ThingySagaId($"saga-{thingyId.Value}");
-
-            return AggregateStore.LoadAsync<ThingySaga, ThingySagaId>(
-                expectedThingySagaId,
-                CancellationToken.None);
+            receivedSagaPingIds.Should().BeEquivalentTo(pingsWithRunningSaga);
         }
 
         protected override IRootResolver CreateRootResolver(IEventFlowOptions eventFlowOptions)

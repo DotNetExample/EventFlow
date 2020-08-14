@@ -1,7 +1,7 @@
 ﻿// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -21,7 +21,10 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+using System;
+using EventFlow.Aggregates;
 using EventFlow.Configuration;
+using EventFlow.Core;
 using EventFlow.Extensions;
 using EventFlow.ReadStores;
 using EventFlow.Sql.ReadModels;
@@ -57,31 +60,42 @@ namespace EventFlow.SQLite.Extensions
 
         public static IEventFlowOptions UseSQLiteReadModel<TReadModel, TReadModelLocator>(
             this IEventFlowOptions eventFlowOptions)
-            where TReadModel : class, IReadModel, new()
+            where TReadModel : class, IReadModel
             where TReadModelLocator : IReadModelLocator
         {
             return eventFlowOptions
-                .RegisterServices(f =>
-                    {
-                        f.Register<IReadModelSqlGenerator, ReadModelSqlGenerator>(Lifetime.Singleton, true);
-                        f.Register<ISQLiteReadModelStore<TReadModel>, SQLiteReadModelStore<TReadModel>>();
-                        f.Register<IReadModelStore<TReadModel>>(r => r.Resolver.Resolve<ISQLiteReadModelStore<TReadModel>>());
-                    })
+                .RegisterServices(RegisterSQLiteReadStore<TReadModel>)
                 .UseReadStoreFor<ISQLiteReadModelStore<TReadModel>, TReadModel, TReadModelLocator>();
         }
 
         public static IEventFlowOptions UseSQLiteReadModel<TReadModel>(
             this IEventFlowOptions eventFlowOptions)
-            where TReadModel : class, IReadModel, new()
+            where TReadModel : class, IReadModel
         {
             return eventFlowOptions
-                .RegisterServices(f =>
-                    {
-                        f.Register<IReadModelSqlGenerator, ReadModelSqlGenerator>(Lifetime.Singleton, true);
-                        f.Register<ISQLiteReadModelStore<TReadModel>, SQLiteReadModelStore<TReadModel>>();
-                        f.Register<IReadModelStore<TReadModel>>(r => r.Resolver.Resolve<ISQLiteReadModelStore<TReadModel>>());
-                    })
+                .RegisterServices(RegisterSQLiteReadStore<TReadModel>)
                 .UseReadStoreFor<ISQLiteReadModelStore<TReadModel>, TReadModel>();
+        }
+
+        [Obsolete("Use the simpler method UseSQLiteReadModel<TReadModel> instead.")]
+        public static IEventFlowOptions UseSQLiteReadModelFor<TAggregate, TIdentity, TReadModel>(
+            this IEventFlowOptions eventFlowOptions)
+            where TAggregate : IAggregateRoot<TIdentity>
+            where TIdentity : IIdentity
+            where TReadModel : class, IReadModel
+        {
+            return eventFlowOptions
+                .RegisterServices(RegisterSQLiteReadStore<TReadModel>)
+                .UseReadStoreFor<TAggregate, TIdentity, ISQLiteReadModelStore<TReadModel>, TReadModel>();
+        }
+
+        private static void RegisterSQLiteReadStore<TReadModel>(
+            IServiceRegistration serviceRegistration)
+            where TReadModel : class, IReadModel
+        {
+            serviceRegistration.Register<IReadModelSqlGenerator, ReadModelSqlGenerator>(Lifetime.Singleton, true);
+            serviceRegistration.Register<ISQLiteReadModelStore<TReadModel>, SQLiteReadModelStore<TReadModel>>();
+            serviceRegistration.Register<IReadModelStore<TReadModel>>(r => r.Resolver.Resolve<ISQLiteReadModelStore<TReadModel>>());
         }
     }
 }

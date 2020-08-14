@@ -1,7 +1,7 @@
 ﻿// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -27,6 +27,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using EventFlow.Aggregates;
 using EventFlow.Configuration;
+using EventFlow.Configuration.Cancellation;
 using EventFlow.Core;
 using EventFlow.Jobs;
 using EventFlow.Provided.Jobs;
@@ -42,8 +43,9 @@ namespace EventFlow.Subscribers
         private readonly IJobScheduler _jobScheduler;
         private readonly IResolver _resolver;
         private readonly IEventFlowConfiguration _eventFlowConfiguration;
+        private readonly ICancellationConfiguration _cancellationConfiguration;
+        private readonly IDispatchToReadStores _dispatchToReadStores;
         private readonly IReadOnlyCollection<ISubscribeSynchronousToAll> _subscribeSynchronousToAlls;
-        private readonly IReadOnlyCollection<IReadStoreManager> _readStoreManagers;
 
         public DomainEventPublisher(
             IDispatchToEventSubscribers dispatchToEventSubscribers,
@@ -51,26 +53,40 @@ namespace EventFlow.Subscribers
             IJobScheduler jobScheduler,
             IResolver resolver,
             IEventFlowConfiguration eventFlowConfiguration,
-            IEnumerable<IReadStoreManager> readStoreManagers,
-            IEnumerable<ISubscribeSynchronousToAll> subscribeSynchronousToAlls)
+            IEnumerable<ISubscribeSynchronousToAll> subscribeSynchronousToAlls,
+            ICancellationConfiguration cancellationConfiguration,
+            IDispatchToReadStores dispatchToReadStores)
         {
             _dispatchToEventSubscribers = dispatchToEventSubscribers;
             _dispatchToSagas = dispatchToSagas;
             _jobScheduler = jobScheduler;
             _resolver = resolver;
             _eventFlowConfiguration = eventFlowConfiguration;
+            _cancellationConfiguration = cancellationConfiguration;
+            _dispatchToReadStores = dispatchToReadStores;
             _subscribeSynchronousToAlls = subscribeSynchronousToAlls.ToList();
-            _readStoreManagers = readStoreManagers.ToList();
         }
 
-        public async Task PublishAsync<TAggregate, TIdentity>(
+        public Task PublishAsync<TAggregate, TIdentity>(
             TIdentity id,
             IReadOnlyCollection<IDomainEvent> domainEvents,
             CancellationToken cancellationToken)
             where TAggregate : IAggregateRoot<TIdentity>
             where TIdentity : IIdentity
         {
+            return PublishAsync(
+                domainEvents,
+                cancellationToken);
+        }
+
+        public async Task PublishAsync(
+            IReadOnlyCollection<IDomainEvent> domainEvents,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken = _cancellationConfiguration.Limit(cancellationToken, CancellationBoundary.BeforeUpdatingReadStores);
             await PublishToReadStoresAsync(domainEvents, cancellationToken).ConfigureAwait(false);
+
+            cancellationToken = _cancellationConfiguration.Limit(cancellationToken, CancellationBoundary.BeforeNotifyingSubscribers);
             await PublishToSubscribersOfAllEventsAsync(domainEvents, cancellationToken).ConfigureAwait(false);
 
             // Update subscriptions AFTER read stores have been updated
@@ -82,12 +98,12 @@ namespace EventFlow.Subscribers
 
         private async Task PublishToReadStoresAsync(
             IReadOnlyCollection<IDomainEvent> domainEvents,
-            CancellationToken _)
+            CancellationToken cancellationToken)
         {
-            // ARGH, dilemma, should we pass the cancellation token to read model update or not?
-            var updateReadStoresTasks = _readStoreManagers
-                .Select(rsm => rsm.UpdateReadStoresAsync(domainEvents, CancellationToken.None));
-            await Task.WhenAll(updateReadStoresTasks).ConfigureAwait(false);
+            await _dispatchToReadStores.DispatchAsync(
+                domainEvents,
+                cancellationToken)
+                .ConfigureAwait(false);
         }
 
         private async Task PublishToSubscribersOfAllEventsAsync(

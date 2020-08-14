@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -35,18 +35,18 @@ namespace EventFlow.TestHelpers
         public static int GetFreePort()
         {
             var ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
-            var activeTcpListeners = ipGlobalProperties.GetActiveTcpListeners();
-            var activeTcpConnections = ipGlobalProperties.GetActiveTcpConnections();
+            var usedPorts = Enumerable.Empty<int>()
+                .Concat(ipGlobalProperties.GetActiveTcpListeners().Select(l => l.Port))
+                .Concat(ipGlobalProperties.GetActiveUdpListeners().Select(l => l.Port))
+                .Concat(ipGlobalProperties.GetActiveTcpConnections().Select(c => c.LocalEndPoint.Port))
+                .Distinct();
 
-            var ports = new HashSet<int>(Enumerable.Empty<int>()
-                .Concat(activeTcpListeners.Select(l => l.Port)
-                .Concat(activeTcpConnections.Select(c => c.LocalEndPoint.Port))
-                ));
+            var portLookup = new HashSet<int>(usedPorts);
 
             while (true)
             {
                 var port = Random.Next(10000, 60000);
-                if (!ports.Contains(port))
+                if (!portLookup.Contains(port))
                 {
                     return port;
                 }

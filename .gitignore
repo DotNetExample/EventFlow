@@ -96,6 +96,9 @@ _TeamCity*
 # DotCover is a Code Coverage Tool
 *.dotCover
 
+# AxoCover is a Code Coverage Tool
+.axoCover/
+
 # NCrunch
 _NCrunch_*
 .*crunch*.local.xml
@@ -182,10 +185,6 @@ FakesAssemblies/
 # SourceTree
 *.orig
 
-# Project specific files
-/Tools
-/Build
-
 # NCrunch
 *.ncrunchsolution
 *.ncrunchproject
@@ -195,3 +194,19 @@ FakesAssemblies/
 
 # FAKE
 /.fake
+
+# JetBrains Rider
+/.idea
+
+# Git commit history
+/-la
+
+# Visual Studio Code
+/.ionide
+/.vscode
+
+#####################################################
+
+# Project specific files
+/Tools
+/Build

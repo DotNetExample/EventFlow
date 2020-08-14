@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -37,6 +37,7 @@ namespace EventFlow.EventStores.Files
     {
         private readonly ILog _log;
         private readonly IJsonSerializer _jsonSerializer;
+        private readonly IFilesEventStoreConfiguration _configuration;
         private readonly IFilesEventLocator _filesEventLocator;
         private readonly AsyncLock _asyncLock = new AsyncLock();
         private readonly string _logFilePath;
@@ -66,6 +67,7 @@ namespace EventFlow.EventStores.Files
         {
             _log = log;
             _jsonSerializer = jsonSerializer;
+            _configuration = configuration;
             _filesEventLocator = filesEventLocator;
             _logFilePath = Path.Combine(configuration.StorePath, "Log.store");
 
@@ -98,16 +100,17 @@ namespace EventFlow.EventStores.Files
                 ? 1
                 : int.Parse(globalPosition.Value);
 
-            var paths = Enumerable.Range(startPosition, pageSize)
-                .TakeWhile(g => _eventLog.ContainsKey(g))
-                .Select(g => _eventLog[g])
-                .ToList();
-
             var committedDomainEvents = new List<FileEventData>();
-            foreach (var path in paths)
+
+            using (await _asyncLock.WaitAsync(cancellationToken).ConfigureAwait(false))
             {
-                var committedDomainEvent = await LoadFileEventDataFile(path).ConfigureAwait(false);
-                committedDomainEvents.Add(committedDomainEvent);
+                var paths = EnumeratePaths(startPosition).Take(pageSize);
+
+                foreach (var path in paths)
+                {
+                    var committedDomainEvent = await LoadFileEventDataFile(path).ConfigureAwait(false);
+                    committedDomainEvents.Add(committedDomainEvent);
+                }
             }
 
             var nextPosition = committedDomainEvents.Any()
@@ -115,6 +118,20 @@ namespace EventFlow.EventStores.Files
                 : startPosition;
 
             return new AllCommittedEventsPage(new GlobalPosition(nextPosition.ToString()), committedDomainEvents);
+        }
+
+        private IEnumerable<string> EnumeratePaths(long startPosition)
+        {
+            while (_eventLog.TryGetValue(startPosition, out var path))
+            {
+                var fullPath = Path.Combine(_configuration.StorePath, path);
+                if (File.Exists(fullPath))
+                {
+                    yield return fullPath;
+                }
+
+                startPosition++;
+            }
         }
 
         public async Task<IReadOnlyCollection<ICommittedDomainEvent>> CommitEventsAsync(
@@ -136,29 +153,20 @@ namespace EventFlow.EventStores.Files
                 {
                     var eventPath = _filesEventLocator.GetEventPath(id, serializedEvent.AggregateSequenceNumber);
                     _globalSequenceNumber++;
-                    _eventLog[_globalSequenceNumber] = eventPath;
+                    _eventLog[_globalSequenceNumber] = GetRelativePath(_configuration.StorePath, eventPath);
 
                     var fileEventData = new FileEventData
-                        {
-                            AggregateId = id.Value,
-                            AggregateSequenceNumber = serializedEvent.AggregateSequenceNumber,
-                            Data = serializedEvent.SerializedData,
-                            Metadata = serializedEvent.SerializedMetadata,
-                            GlobalSequenceNumber = _globalSequenceNumber,
-                        };
-            
+                    {
+                        AggregateId = id.Value,
+                        AggregateSequenceNumber = serializedEvent.AggregateSequenceNumber,
+                        Data = serializedEvent.SerializedData,
+                        Metadata = serializedEvent.SerializedMetadata,
+                        GlobalSequenceNumber = _globalSequenceNumber,
+                    };
+
                     var json = _jsonSerializer.Serialize(fileEventData, true);
 
-                    if (File.Exists(eventPath))
-                    {
-                        // TODO: This needs to be on file creation
-                        throw new OptimisticConcurrencyException(string.Format(
-                            "Event {0} already exists for entity with ID '{1}'",
-                            fileEventData.AggregateSequenceNumber,
-                            id));
-                    }
-
-                    using (var streamWriter = File.CreateText(eventPath))
+                    using (var streamWriter = CreateNewTextFile(eventPath, fileEventData))
                     {
                         _log.Verbose("Writing file '{0}'", eventPath);
                         await streamWriter.WriteAsync(json).ConfigureAwait(false);
@@ -177,13 +185,32 @@ namespace EventFlow.EventStores.Files
                         new EventStoreLog
                         {
                             GlobalSequenceNumber = _globalSequenceNumber,
-                            Log = _eventLog,
+                            Log = _eventLog
                         },
                         true);
                     await streamWriter.WriteAsync(json).ConfigureAwait(false);
                 }
 
                 return committedDomainEvents;
+            }
+        }
+
+        private StreamWriter CreateNewTextFile(string path, FileEventData fileEventData)
+        {
+            try
+            {
+                var stream = new FileStream(path, FileMode.CreateNew);
+                return new StreamWriter(stream);
+            }
+            catch (IOException)
+            {
+                if (File.Exists(path))
+                {
+                    throw new OptimisticConcurrencyException(
+                        $"Event {fileEventData.AggregateSequenceNumber} already exists for entity with ID '{fileEventData.AggregateId}'");
+                }
+
+                throw;
             }
         }
 
@@ -209,12 +236,14 @@ namespace EventFlow.EventStores.Files
             }
         }
 
-        public Task DeleteEventsAsync(IIdentity id, CancellationToken cancellationToken)
+        public async Task DeleteEventsAsync(IIdentity id, CancellationToken cancellationToken)
         {
             _log.Verbose("Deleting entity with ID '{0}'", id);
             var path = _filesEventLocator.GetEntityPath(id);
-            Directory.Delete(path, true);
-            return Task.FromResult(0);
+            using (await _asyncLock.WaitAsync(cancellationToken).ConfigureAwait(false))
+            {
+                Directory.Delete(path, true);
+            }
         }
 
         private async Task<FileEventData> LoadFileEventDataFile(string eventPath)
@@ -248,6 +277,46 @@ namespace EventFlow.EventStores.Files
                 GlobalSequenceNumber = directory.Keys.Any() ? directory.Keys.Max() : 0,
                 Log = directory,
             };
+        }
+
+        /// <summary>
+        /// Creates a relative path from one file or folder to another.
+        /// </summary>
+        /// <param name="relativeTo">Contains the directory that defines the start of the relative path.</param>
+        /// <param name="path">Contains the path that defines the endpoint of the relative path.</param>
+        /// <returns>The relative path from the start directory to the end path or <c>toPath</c> if the paths are not related.</returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        /// <exception cref="UriFormatException"></exception>
+        /// <exception cref="InvalidOperationException"></exception>
+        private string GetRelativePath(string relativeTo, string path)
+        {
+#if NETCOREAPP3_1 || NETCOREAPP3_0
+            return Path.GetRelativePath(relativeTo, path);
+#else
+            if (string.IsNullOrEmpty(relativeTo))
+                throw new ArgumentNullException(nameof(relativeTo));
+            if (string.IsNullOrEmpty(path))
+                throw new ArgumentNullException(nameof(path));
+
+            if (relativeTo.Last() != Path.DirectorySeparatorChar && relativeTo.Last() != Path.AltDirectorySeparatorChar)
+                relativeTo += Path.DirectorySeparatorChar;
+
+            var fromUri = new Uri(relativeTo);
+            var toUri = new Uri(path);
+
+            if (fromUri.Scheme != toUri.Scheme)
+                return path; // path can't be made relative.
+
+            var relativeUri = fromUri.MakeRelativeUri(toUri);
+            var relativePath = Uri.UnescapeDataString(relativeUri.ToString());
+
+            if (toUri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase))
+            {
+                relativePath = relativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            }
+
+            return relativePath;
+#endif
         }
     }
 }

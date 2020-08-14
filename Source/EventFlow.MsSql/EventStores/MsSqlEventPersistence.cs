@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -67,24 +67,23 @@ namespace EventFlow.MsSql.EventStores
             var startPosition = globalPosition.IsStart
                 ? 0
                 : long.Parse(globalPosition.Value);
-            var endPosition = startPosition + pageSize;
 
             const string sql = @"
-                SELECT
+                SELECT TOP(@pageSize)
                     GlobalSequenceNumber, BatchId, AggregateId, AggregateName, Data, Metadata, AggregateSequenceNumber
                 FROM EventFlow
                 WHERE
-                    GlobalSequenceNumber >= @FromId AND GlobalSequenceNumber <= @ToId
+                    GlobalSequenceNumber >= @startPosition
                 ORDER BY
                     GlobalSequenceNumber ASC";
             var eventDataModels = await _connection.QueryAsync<EventDataModel>(
                 Label.Named("mssql-fetch-events"),
-                cancellationToken,
-                sql,
-                new
+                    cancellationToken,
+                    sql,
+                    new
                     {
-                        FromId = startPosition,
-                        ToId = endPosition,
+                        startPosition,
+                        pageSize
                     })
                 .ConfigureAwait(false);
 

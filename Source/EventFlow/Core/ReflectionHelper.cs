@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -48,19 +48,32 @@ namespace EventFlow.Core
         /// Handles correct upcast. If no upcast was needed, then this could be exchanged to an <c>Expression.Call</c>
         /// and an <c>Expression.Lambda</c>.
         /// </summary>
-        public static TResult CompileMethodInvocation<TResult>(Type type, string methodName, params Type[] methodSignature)
+        public static TResult CompileMethodInvocation<TResult>(Type type, string methodName,
+            params Type[] methodSignature)
         {
             var typeInfo = type.GetTypeInfo();
+            var methods = typeInfo
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Where(m => m.Name == methodName);
 
             var methodInfo = methodSignature == null || !methodSignature.Any()
-                ? typeInfo.GetMethods(BindingFlags.Instance | BindingFlags.Public).SingleOrDefault(m => m.Name == methodName)
-                : typeInfo.GetMethod(methodName, methodSignature);
+                ? methods.SingleOrDefault()
+                : methods.SingleOrDefault(m => m.GetParameters().Select(mp => mp.ParameterType).SequenceEqual(methodSignature));
 
             if (methodInfo == null)
             {
                 throw new ArgumentException($"Type '{type.PrettyPrint()}' doesn't have a method called '{methodName}'");
             }
 
+            return CompileMethodInvocation<TResult>(methodInfo);
+        }
+
+        /// <summary>
+        /// Handles correct upcast. If no upcast was needed, then this could be exchanged to an <c>Expression.Call</c>
+        /// and an <c>Expression.Lambda</c>.
+        /// </summary>
+        public static TResult CompileMethodInvocation<TResult>(MethodInfo methodInfo)
+        {
             var genericArguments = typeof(TResult).GetTypeInfo().GetGenericArguments();
             var methodArgumentList = methodInfo.GetParameters().Select(p => p.ParameterType).ToList();
             var funcArgumentList = genericArguments.Skip(1).Take(methodArgumentList.Count).ToList();
@@ -84,6 +97,8 @@ namespace EventFlow.Core
                 {
                     instanceArgument,
                 };
+
+            var type = methodInfo.DeclaringType;
             var instanceVariable = Expression.Variable(type);
             var blockVariables = new List<ParameterExpression>
                 {

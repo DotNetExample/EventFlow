@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -32,6 +32,7 @@ using EventFlow.Extensions;
 using EventFlow.TestHelpers;
 using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Commands;
+using EventFlow.TestHelpers.Aggregates.Queries;
 using EventFlow.TestHelpers.Aggregates.ValueObjects;
 using FluentAssertions;
 using NUnit.Framework;
@@ -56,6 +57,7 @@ namespace EventFlow.Tests.IntegrationTests
                 .UseFilesEventStore(FilesEventStoreConfiguration.Create(filesEventStoreDirectory))
                 .AddEvents(EventFlowTestHelpers.Assembly)
                 .AddCommandHandlers(EventFlowTestHelpers.Assembly)
+                .RegisterServices(sr => sr.Register<IScopedContext, ScopedContext>(Lifetime.Scoped))
                 .CreateResolver();
 
             _commandBus = _resolver.Resolve<ICommandBus>();
@@ -75,9 +77,9 @@ namespace EventFlow.Tests.IntegrationTests
         }
 
         [Test, Explicit]
-        public void CreateEventHelper()
+        public async Task CreateEventHelper()
         {
-            _commandBus.Publish(new ThingyPingCommand(_thingyId, PingId.New), CancellationToken.None);
+            await _commandBus.PublishAsync(new ThingyPingCommand(_thingyId, PingId.New), CancellationToken.None);
         }
     }
 }

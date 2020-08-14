@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -22,6 +22,7 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using EventFlow.Aggregates;
+using EventFlow.Aggregates.ExecutionResults;
 using EventFlow.Commands;
 using EventFlow.TestHelpers;
 using EventFlow.TestHelpers.Aggregates;
@@ -34,7 +35,7 @@ namespace EventFlow.Tests.UnitTests.Commands
     [Category(Categories.Unit)]
     public class CommandTests : Test
     {
-        public class CriticalCommand : Command<ThingyAggregate, ThingyId, EventId>
+        public class CriticalCommand : Command<ThingyAggregate, ThingyId, IExecutionResult>
         {
             public string CriticalData { get; }
 

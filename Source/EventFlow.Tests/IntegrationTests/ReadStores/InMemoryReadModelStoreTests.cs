@@ -1,7 +1,7 @@
 ﻿// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -21,11 +21,12 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-using System.Threading;
+using System;
 using System.Threading.Tasks;
 using EventFlow.Configuration;
 using EventFlow.Extensions;
 using EventFlow.TestHelpers;
+using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Entities;
 using EventFlow.TestHelpers.Suites;
 using EventFlow.Tests.IntegrationTests.ReadStores.QueryHandlers;
@@ -37,6 +38,8 @@ namespace EventFlow.Tests.IntegrationTests.ReadStores
     [Category(Categories.Integration)]
     public class InMemoryReadModelStoreTests : TestSuiteForReadModelStore
     {
+        protected override Type ReadModelType { get; } = typeof(InMemoryThingyReadModel);
+
         protected override IRootResolver CreateRootResolver(IEventFlowOptions eventFlowOptions)
         {
             var resolver = eventFlowOptions
@@ -52,18 +55,11 @@ namespace EventFlow.Tests.IntegrationTests.ReadStores
             return resolver;
         }
 
-        protected override Task PurgeTestAggregateReadModelAsync()
+        [Test]
+        public override Task OptimisticConcurrencyCheck()
         {
-            return Task.WhenAll(
-                ReadModelPopulator.PurgeAsync<InMemoryThingyReadModel>(CancellationToken.None),
-                ReadModelPopulator.PurgeAsync<InMemoryThingyMessageReadModel>(CancellationToken.None));
-        }
-
-        protected override Task PopulateTestAggregateReadModelAsync()
-        {
-            return Task.WhenAll(
-                ReadModelPopulator.PopulateAsync<InMemoryThingyReadModel>(CancellationToken.None),
-                ReadModelPopulator.PopulateAsync<InMemoryThingyMessageReadModel>(CancellationToken.None));
+            // The in-memory uses a global lock on all read models making concurrency impossible
+            return Task.FromResult(0);
         }
     }
 }

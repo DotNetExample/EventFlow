@@ -1,19 +1,19 @@
-﻿// The MIT License (MIT)
-//
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// The MIT License (MIT)
+// 
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
-//
+// 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
 // the Software without restriction, including without limitation the rights to
 // use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
 // the Software, and to permit persons to whom the Software is furnished to do so,
 // subject to the following conditions:
-//
+// 
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-//
+// 
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
 // FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
@@ -27,10 +27,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using EventFlow.Aggregates;
+using EventFlow.Aggregates.ExecutionResults;
 using EventFlow.Commands;
+using EventFlow.Configuration;
 using EventFlow.Core;
 using EventFlow.Sagas;
 using EventFlow.ValueObjects;
+using FluentAssertions;
 
 namespace EventFlow.Tests.IntegrationTests.Sagas
 {
@@ -43,34 +46,51 @@ namespace EventFlow.Tests.IntegrationTests.Sagas
             }
         }
 
-        public class InMemorySagaStore : ISagaStore
+        public class InMemorySagaStore : SagaStore
         {
+            private readonly IResolver _resolver;
             private readonly Dictionary<ISagaId, object> _sagas = new Dictionary<ISagaId, object>();
             private readonly AsyncLock _asyncLock = new AsyncLock();
+            private bool _hasUpdateBeenCalled;
 
-            public async Task<TSaga> UpdateAsync<TSaga>(
-                ISagaId sagaId,
-                SagaDetails sagaDetails,
-                ISourceId sourceId,
-                Func<TSaga, CancellationToken, Task> updateSaga,
-                CancellationToken cancellationToken)
-                where TSaga : ISaga
+            public InMemorySagaStore(
+                IResolver resolver)
             {
+                _resolver = resolver;
+            }
+
+            public void UpdateShouldNotHaveBeenCalled()
+            {
+                this._hasUpdateBeenCalled.Should().BeFalse();
+            }
+
+            public override async Task<ISaga> UpdateAsync(
+                ISagaId sagaId,
+                Type sagaType,
+                ISourceId sourceId,
+                Func<ISaga, CancellationToken, Task> updateSaga,
+                CancellationToken cancellationToken)
+            {
+                var commandbus = _resolver.Resolve<ICommandBus>();
+
+                ISaga saga;
                 using (await _asyncLock.WaitAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    object obj;
-                    if (!_sagas.TryGetValue(sagaId, out obj))
+                    _hasUpdateBeenCalled = true;
+
+                    if (!_sagas.TryGetValue(sagaId, out var obj))
                     {
-                        obj = Activator.CreateInstance(sagaDetails.SagaType, new object[] {sagaId});
+                        obj = Activator.CreateInstance(sagaType, sagaId);
                         _sagas[sagaId] = obj;
                     }
 
-                    var saga = (TSaga) obj;
+                    saga = (ISaga) obj;
 
                     await updateSaga(saga, cancellationToken).ConfigureAwait(false);
-
-                    return saga;
                 }
+                
+                await saga.PublishAsync(commandbus, cancellationToken).ConfigureAwait(false);
+                return saga;
             }
         }
 
@@ -126,11 +146,11 @@ namespace EventFlow.Tests.IntegrationTests.Sagas
                 }
             }
 
-            protected void Publish<TCommandAggregate, TCommandAggregateIdentity, TCommandSourceIdentity>(
-                ICommand<TCommandAggregate, TCommandAggregateIdentity, TCommandSourceIdentity> command)
+            protected void Publish<TCommandAggregate, TCommandAggregateIdentity, TExecutionResult>(
+                ICommand<TCommandAggregate, TCommandAggregateIdentity, TExecutionResult> command)
                 where TCommandAggregate : IAggregateRoot<TCommandAggregateIdentity>
                 where TCommandAggregateIdentity : IIdentity
-                where TCommandSourceIdentity : ISourceId
+                where TExecutionResult : IExecutionResult
             {
                 _unpublishedCommands.Add((b, c) => b.PublishAsync(command, c));
             }
@@ -140,7 +160,13 @@ namespace EventFlow.Tests.IntegrationTests.Sagas
         {
             public Task<ISagaId> LocateSagaAsync(IDomainEvent domainEvent, CancellationToken cancellationToken)
             {
-                return Task.FromResult<ISagaId>(new TestSagaId($"saga-for-{domainEvent.GetIdentity().Value}"));
+                var identity = domainEvent.GetIdentity().Value;
+                if (identity.EndsWith(Guid.Empty.ToString()))
+                {
+                    return Task.FromResult<ISagaId>(null);
+                }
+
+                return Task.FromResult<ISagaId>(new TestSagaId($"saga-for-{identity}"));
             }
         }
 

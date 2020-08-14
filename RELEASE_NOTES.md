@@ -1,6 +1,456 @@
-### New in 0.49 (not released yet)
+### New in 0.80 (not released yet)
 
-* _Nothing yet_
+* Breaking: Merged `AggregateReadStoreManager` and `SingleAggregateReadStoreManager`
+  into one class in order to always guarantee in-order event processing
+* Breaking: Marked the `UseReadStoreFor<,,,>` configuration methods as obsolete,
+  in favor of the simpler overloads with less type parameters (as those automatically
+  figure out the AggregateRoot and Id types and configure the more reliable 
+  `SingleAggregateReadStoreManager` implementation)
+* Obsolete: The class `AsyncHelper` and all non-async methods using it have been
+  marked obsolete and will be removed in EventFlow 1.0 (not planned yet). If you rely
+  on these non-async methods, then merely copy-paste the `AsyncHelper` from the EventFlow
+  code base and continue using it in your transition to async only 
+* Fixed: An issue where `EntityFrameworkEventPersistence` could possibly save aggregate 
+  events out of order, which would lead to out-of-order application when streaming events
+  ordered by GlobalSequenceNumber
+* New: `FilesEventPersistence` now uses relative paths
+* New: A new set of hook-in interfaces are provided from this release, which should
+  make it easier to implement crash resilience (#439) in EventFlow. Please note that
+  this new API is experimentational and subject to change as different strategies are
+  implemented
+  * `IAggregateStoreResilienceStrategy`
+  * `IDispatchToReadStoresResilienceStrategy`
+  * `IDispatchToSubscriberResilienceStrategy`
+  * `ISagaUpdateResilienceStrategy`
+
+### New in 0.79.4216 ((released 2020-05-13)
+
+* New: Added .NET Core 3.1 target for the `EventFlow`
+  and `EventFlow.EntityFramework` packages
+* Added quoting to the SQL query generator for the column names
+
+### New in 0.78.4205 (released 2020-05-11)
+
+* New: Updated LibLog provider to support structured logging with NLog 4.5. 
+  Reduced memory allocations for log4net-provider
+* New: Made several methods in `AggregateRoot<,>` `virtual` to allow
+  easier customization
+* Fixed: Added quoting to the SQL query generator for the column names
+```sql
+  -- query before the fix
+    UPDATE [ReadModel-TestAttributes]
+    SET UpdatedTime = @UpdatedTime
+    WHERE Id = @Id
+  
+  -- query after the fix
+    UPDATE [ReadModel-TestAttributes]
+    SET [UpdatedTime] = @UpdatedTime
+    WHERE [Id] = @Id
+  ```
+* Fixed: Do not log about event upgraders if none is found for an event
+* Fixed: Add default `null` predicate to `AddCommands` and `AddJobs`
+
+### New in 0.77.4077 (released 2019-12-10)
+
+* New: The `EventFlow.AspNetCore` NuGet package now has ASP.NET Core 3 support
+
+### New in 0.76.4014 (released 2019-10-19)
+
+* New: Mongo DB read model store Queryable:
+  ```csharp
+  MongoDbReadModelStore readModelStore;
+  IQueryable<TReadModel> queryable = readModelStore.AsQueryable();
+  ```
+* New: Moved publish of messages in `RabbitMqPublisher` to a new virtual
+  method to ease reuse and customization
+* Fixed: MongoDB read models no longer has the `new()` generic requirement,
+  which aligns read model requirements with the rest of EventFlow
+
+### New in 0.75.3970 (released 2019-09-12)
+
+* Fix: When deserializing the JSON value `"null"` into a struct value like
+  `int`, the `SingleValueObjectConverter` threw an exception instead of
+  merely returning `null` representing an absent `SingleValueObject<int>` value
+
+### New in 0.74.3948 (released 2019-07-01)
+
+* Breaking: Renamed `AspNetCoreEventFlowOptions.AddMetadataProviders()` 
+  to `AddDefaultMetadataProviders()` and made `AddUserClaimsMetadata` opt-in
+  in order to prevent policy issues. 
+* Fix: Allow explicit implementations of `IEmit<>` in aggregate roots
+* Fix: Using `.AddAspNetCore()` with defaults now doesn't throw a DI
+  exception.
+
+### New in 0.73.3933 (released 2019-06-11)
+
+* New: Configure JSON serialization: 
+  ```csharp
+  EventFlowOptions.New.
+    .ConfigureJson(json => json
+      .AddSingleValueObjects()
+      .AddConverter<SomeConverter>()
+    )
+  ```
+* New: ASP.NET Core enhancements:
+  - New fluent configuration API for ASP.NET Core components:
+    `services.AddEventFlow(o => o.AddAspNetCore(c => {...}));` (old syntax
+    `AddAspNetCoreMetadataProviders` is now deprecated).
+  - `.RunBootstrapperOnHostStartup()` runs bootstrappers together with ASP.NET
+    host startup. Previously, this was done in `AddAspNetCoreMetadataProviders`
+    and led to some confusion.
+  - `.UseMvcJsonOptions()` adds EventFlow JSON configuration (see below) to ASP.NET Core,
+    so you can accept and return Single Value Objects as plain strings for example.
+  - `.Add{Whatever}Metadata()` configures specific metadata provider.
+  - `.AddUserClaimsMetadata(params string claimTypes)` configures the new claims metadata
+    provider (for auditing or "ChangedBy" in read models).
+  - `.UseLogging()` configures an adapter for Microsoft.Extensions.Logging
+  - `.UseModelBinding()` adds model binding support for Single Value Objects:
+    ```csharp
+	    [HttpGet("customers/{id}")]
+	    public async Task<IActionResult> SingleValue(CustomerId id)
+	    {
+	        if (!ModelState.IsValid)
+	        {
+	            return BadRequest(ModelState);
+	        }
+    ```
+* Fix: ASP.NET Core `AddRequestHeadersMetadataProvider` doesn't throw when
+  HttpContext is null.
+* Fix: `ReadModelRepopulator` now correctly populates `IAmAsyncReadModelFor`
+
+### New in 0.72.3914 (released 2019-05-28)
+
+* New: `EventFlow.TestHelpers` are now released as .NET Standard as well
+* Fix: Upgrade `EventStore.Client` to v5.0.1 and use it for both .NET Framework and .NET Core
+* Fix: Storing events in MS SQL Server using `MsSqlEventPersistence` now correctly
+  handles non-ANSI unicode characters in strings.
+* Fix: Source link integration now works correctly
+
+### New in 0.71.3834 (released 2019-04-17)
+
+* Breaking: Commands published from AggregateSaga which return `false` 
+  in `IExecutionResult.IsSuccess` will newly lead to an exception being thrown.
+  For disabling all new changes just set protected property
+  `AggregateSaga.ThrowExceptionsOnFailedPublish` to `false` in your AggregateSaga constructor.
+  Also an Exception thrown from any command won't prevent other commands from being executed.
+  All exceptions will be collected and then re-thrown in SagaPublishException (even in case 
+  of just one Exception). The exception structure is following:
+  - SagaPublishException : AggregateException
+    - .InnerExceptions
+      - CommandException : Exception
+        - .CommandType
+        - .SourceId
+        - .InnerException # in case of an exception thrown from the command
+      - CommandException : Exception
+        - .CommandType
+        - .SourceId
+        - .ExecutionResult # in case of returned `false` in `IExecutionResult.IsSuccess`
+  You need to update your `ISagaErrorHandler` implementation to reflect new exception structure,
+  unless you disable this new feature.
+* Fix: MongoDB read store no longer throws an exception on non-existing read models (#625)
+
+### New in 0.70.3824 (released 2019-04-11)
+
+* Breaking: Changed target framework to to .NET Framework 4.5.2 for the following NuGet packages,
+  as Microsoft has [discontinued](https://github.com/Microsoft/dotnet/blob/master/releases/README.md)
+  support for .NET Framework 4.5.1
+  - `EventFlow`
+  - `EventFlow.TestHelpers`
+  - `EventFlow.Autofac`
+  - `EventFlow.Elasticsearch`
+  - `EventFlow.Examples.Shipping`
+  - `EventFlow.Examples.Shipping.Queries.InMemory`
+  - `EventFlow.Hangfire`
+  - `EventFlow.MongoDB`
+  - `EventFlow.MsSql`
+  - `EventFlow.Owin`
+  - `EventFlow.PostgreSql`
+  - `EventFlow.RabbitMQ`
+  - `EventFlow.Sql`
+  - `EventFlow.SQLite`
+* New: Added [SourceLink](https://github.com/dotnet/sourcelink) support
+* Fix: `DispatchToSagas.ProcessSagaAsync` use `EventId` instead of `SourceId` as `SourceId` 
+  for delivery of external event to AggregateSaga
+* Fix: `Identity<T>.NewComb()` now produces string values that doesn't cause
+  too much index fragmentation in MSSQL string columns
+
+### New in 0.69.3772 (released 2019-02-12)
+
+* New: Added configuration option to set the "point of no return" when using
+  cancellation tokens. After this point in processing, cancellation tokens
+  are ignored: 
+  `options.Configure(c => c.CancellationBoundary = CancellationBoundary.BeforeCommittingEvents)`
+* New: Added `EventFlowOptions.RunOnStartup<TBootstrap>` extension method to
+  register `IBootstrap` types that should run on application startup.
+* New: Support for async read model updates (`IAmAsyncReadModelFor`).
+  You can mix and match asynchronous and synchronous updates, 
+  as long as you don't subscribe to the same event in both ways.
+* Fix: Added the schema `dbo` to the `eventdatamodel_list_type` in script 
+  `0002 - Create eventdatamodel_list_type.sql` for `EventFlow.MsSql`.
+* Fix: `LoadAllCommittedEvents` now correctly handles cases where the 
+  `GlobalSequenceNumber` column contains gaps larger than the page size. This bug
+  lead to incomplete event application when using the `ReadModelPopulator` (see #564).
+* Fix: `IResolver.Resolve<T>()` and `IResolver.Resolve(Type)` now throw an
+  exception for unregistered services when using `EventFlow.DependencyInjection`.
+* Minor fix: Fixed stack overflow in `ValidateRegistrations` when decorator
+  components are co-located together with other components that are registed using
+  `Add*`-methods
+
+### New in 0.68.3728 (released 2018-12-03)
+
+* Breaking: Changed name of namespace of the projects AspNetCore `EventFlow.Aspnetcore`
+  to `EventFlow.AspNetCore`
+* Fix: Ignore multiple loads of the same saga
+
+### New in 0.67.3697 (released 2018-10-14)
+
+* New: Expose `Lifetime.Scoped` through the EventFLow service registration
+  interface
+* New: Upgrade NEST version to 6.1.0 and Hangfire.Core to 1.6.20
+  Now Elasticsearch provide one index per document. If `ElasticsearchTypeAttribute`
+  is used the index is map with the Name value as an alias.
+  When `ElasticsearchReadModelStore` delete all documents, it will delete 
+  all indexes linked to the alias.
+* Fix: Internal IoC (remember its just for testing) now correctly invokes
+  `IDisposable.Dispose()` on scope and container dispose
+
+### New in 0.66.3673 (released 2018-09-30)
+
+*  **Critical fix:** - fix issue where the process using EventFlow could hang using
+   100% CPU due to unsynchronized Dictionary access, See #541.
+
+### New in 0.65.3664 (released 2018-09-22)
+
+* New: Entity Framework Core support in the form of the new `EventFlow.EntityFramework` NuGet
+  package. It has been tested with the following stacks.
+  - EF Core In-Memory Database Provider
+  - SQLite
+  - SQL Server
+  - PostgreSQL
+* Minor: Performance improvement of storing events for `EventFlow.PostgreSql`
+
+### New in 0.64.3598 (released 2018-08-24)
+
+* New: Added .NET standard support for SQLite
+
+### New in 0.63.3581 (released 2018-08-07)
+
+* New: PostgreSQL support in the form of the new `EventFlow.PostgreSql` NuGet package
+
+### New in 0.62.3569 (released 2018-07-05)
+
+* New: Created `AggregateReadStoreManager<,,,>` which is a new read store manager
+  for read models that have a 1-to-1 relation with an aggregate. If read models get
+  out of sync, or events are applied in different order, events are either fecthed
+  or skipped. Added extensions to allow registration.
+  - `UseInMemoryReadStoreFor<,,>`
+  - `UseElasticsearchReadModelFor<,,>`
+  - `UseMssqlReadModelFor<,,>`
+  - `UseSQLiteReadModelFor<,,>`
+* New: Added `ReadModelId` and `IsNew` properties to the context object that is
+  available to a read model inside the `Apply` methods in order to better support
+  scenarios where a single event affects multiple read model instances.
+* Minor: Applying events to a snapshot will now have the correct `Version` set
+  inside the `Apply` methods.
+* Minor: Trying to apply events in the wrong order will now throw an exception.
+
+### New in 0.61.3524 (released 2018-06-26)
+
+* New: Support for `Microsoft.Extensions.DependencyInjection` (`IServiceProvider`
+  and `IServiceCollection`) using the `EventFlow.DependencyInjection` NuGet package.
+
+  Add it to your ASP.NET Core 2.0 application:
+  ```csharp
+	public void ConfigureServices(IServiceCollection services)
+	{
+		services.AddMvc();
+		services.AddEventFlow(o => o.AddDefaults(MyDomainAssembly));
+	}
+  ```
+  Or use it explicitly:
+  ```csharp
+	EventFlowOptions.New.
+		.UseServiceCollection()
+		...
+		.CreateServiceProvider();
+  ```
+* New: Package `EventFlow.Autofac` now references Autofac 3.5.2 for .NET
+  framework 4.5.1 (down from Autofac v4.5.0)
+* Fixed: Constructor injection of scoped instances into query handlers
+
+### New in 0.60.3490 (released 2018-06-18)
+
+* New: Implemented optimistic concurrency checks for MSSQL, SQLite and
+  Elasticsearch read models
+* New: Added .NET standard support for EventStore
+* New: Delete read models by invoking `context.MarkForDeletion()` in an Apply method
+* Minor: Removed unnecessary transaction in EventStore persistance
+* Fixed: Read model SQL schema is no longer ignored for `Table` attribute
+
+### New in 0.59.3396 (released 2018-05-23)
+
+* Fix: Commands are now correctly published when no events are emitted from a saga
+  after handling a domain event
+* Minor fix: Updated name of Primary Key for MSSQL Snapshot Store to be different
+  from MSSQL Event Store, so both can be used in the same database without conflicts
+
+### New in 0.58.3377 (released 2018-05-15)
+
+* Minor fix: Corrected log in `CommandBus` regarding events emitted due to command
+
+### New in 0.57.3359 (released 2018-04-30)
+
+* Fixed: AggregateException/InvalidOperationException when reading and updating
+  an aggregate from different threads at the same time using `InMemoryEventPersistence`
+* New: .NET standard 1.6 and 2.0 support for `EventFlow.MsSql` package
+
+### New in 0.56.3328 (released 2018-04-24)
+
+* New: Allow enums to be used in `SingleValueObject<T>` and protect from
+  undefined enum values
+
+### New in 0.55.3323 (released 2018-04-24)
+
+* Fixed: Re-populating events to read models that span multiple aggregates
+  now has events orderd by timestamp instead of sequence numbers, i.e., events
+  from aggregates with higher sequences numbers isn't forced last
+* New: Trigger sagas without the need of any domain events by using
+  `ISagaStore.UpdateAsync(...)`
+* New: .NET standard 2.0 (still supports 1.6) support added to these
+  NuGet packages
+  - EventFlow
+  - EventFlow.Autofac
+  - EventFlow.Elasticsearch
+  - EventFlow.Hangfire
+  - EventFlow.Sql
+
+### New in 0.54.3261 (released 2018-02-25)
+
+- **Critical fix:** `SagaAggregateStore` was incorrectly putting an object reference
+  into its memory cache causing an object already disposed exception when working with
+  sagas
+- New: Added [LibLog](https://github.com/damianh/LibLog), enable by
+  calling the `IEventFlowOptions.UseLibLog(...)` extension
+
+### New in 0.53.3204 (released 2018-01-25)
+
+* New: Allow events to have multiple `EventVersion` attributes
+* Fixed: `ReflectionHelper.CompileMethodInvocation` now recognises
+  `private` methods.
+
+### New in 0.52.3178 (released 2017-11-02)
+
+* Fixed: `.UseFilesEventStore` now uses a thread safe singleton instance for
+  file system persistence, making it suitable for use in multi-threaded unit
+  tests. Please don't use the files event store in production scenarios
+* New: Support for unicode characters in type names. This simplifies using an
+  [ubiquitous language](http://www.jamesshore.com/Agile-Book/ubiquitous_language.html)
+  in non-english domains
+* Fixed: Include hyphen in prefix validation for identity values. This fixes a bug
+  where invalid identities could be created (e.g. `ThingyId.With("thingyINVALID-a41e...")`)
+
+### New in 0.51.3155 (released 2017-10-25)
+
+* New: Removed the `new()` requirement for read models
+* New: If `ISagaLocator.LocateSagaAsync` cannot identify the saga for a given
+  event, it may now return `Task.FromResult(null)` in order to short-circuit
+  the dispatching process. This might be useful in cases where some instances
+  of an event belong to a saga process while others don't
+* Fixed: `StringExtensions.ToSha256()` can now be safely used from
+  concurrent threads
+
+### New in 0.50.3124 (released 2017-10-21)
+
+* New: While EventFlow tries to limit the about of painful API changes, the
+  introduction of execution/command results are considered a necessary step
+  towards as better API.
+
+  Commands and command handlers have been updated to support execution
+  results. Execution results is meant to be an alternative to throwing domain
+  exceptions to do application flow. In short, before you were required to
+  throw an exception if you wanted to abort execution and "return" a failure
+  message.
+
+  The introduction of execution results changes this, as it allows
+  returning a failed result that is passed all the way back to the command
+  publisher. Execution results are generic and can thus contain e.g. any
+  validation results that a UI might need. The `ICommandBus.PublishAsync`
+  signature has changed to reflect this.
+
+  from
+  ```csharp
+      Task<ISourceId> PublishAsync<TAggregate, TIdentity, TSourceIdentity>(
+        ICommand<TAggregate, TIdentity, TSourceIdentity> command)
+        where TAggregate : IAggregateRoot<TIdentity>
+        where TIdentity : IIdentity
+        where TSourceIdentity : ISourceId
+  ```
+  to
+  ```csharp
+      Task<TExecutionResult> PublishAsync<TAggregate, TIdentity, TExecutionResult>(
+        ICommand<TAggregate, TIdentity, TExecutionResult> command,
+        CancellationToken cancellationToken)
+        where TAggregate : IAggregateRoot<TIdentity>
+        where TIdentity : IIdentity
+        where TExecutionResult : IExecutionResult
+  ```
+
+  Command handler signature has changed from
+
+  ```csharp
+      Task ExecuteAsync(
+          TAggregate aggregate,
+          TCommand command,
+          CancellationToken cancellationToken);
+  ```
+  to
+  ```csharp
+      Task<TExecutionResult> ExecuteCommandAsync(
+          TAggregate aggregate,
+          TCommand command,
+          CancellationToken cancellationToken)
+  ```
+
+  Migrating to the new structure should be seamless if your current code base
+  inherits its command handlers from the provided `CommandHandler<,,>` base
+  class.
+
+* Breaking: Source IDs on commands have been reworked to "make room" for
+  execution results on commands. The generic parameter from `ICommand<,,>`
+  and `ICommandHandler<,,,>` has been removed in favor of the new execution
+  results. `ICommand.SourceId` is now of type `ISourceId` instead of using
+  the generic type and the `ICommandBus.PublishAsync` no longer returns
+  `Task<ISourceId>`
+
+  To get code that behaves similar to the previous version, simply take the
+  `ISourceId` from the command, i.e., instead of this
+
+  ```csharp
+  var sourceId = await commandBus.PublishAsync(command);
+  ```
+  write this
+  ```csharp
+  await commandBus.PublishAsync(command);
+  var sourceId = command.SourceId;
+  ```
+  (`CancellationToken` and `.ConfigureAwait(false)` omitted fromt he above)
+
+* Breaking: Upgraded NuGet dependency on `RabbitMQ.Client` from `>= 4.1.3`
+  to `>= 5.0.1`
+
+### New in 0.49.3031 (released 2017-09-07)
+
+* Breaking: Upgraded `EventStore.Client` dependency to version 4.0
+* Breaking: Changed target framework for `EventFlow.EventStores.EventStore` to
+  .NET 4.6.2 as required by `EventStore.Client` NuGet dependency
+* Fix: `EventFlow.Hangfire` now depends on `Hangfire.Core` instead of
+  `Hangfire`
+* New: Added an overload to `IDomainEventPublisher.PublishAsync` that isn't
+  generic and doesn't require an aggregate ID
+* New: Added `IReadModelPopulator.DeleteAsync` that allows deletion of single
+  read models
+* Obsolete: `IDomainEventPublisher.PublishAsync<,>` (generic) in favor of the
+  new less restrictive non-generic overload
 
 ### New in 0.48.2937 (released 2017-07-11)
 
@@ -25,7 +475,7 @@
 
 * New: To be more explicit, `IEventFlowOpions.AddSynchronousSubscriber<,,,>` and
   `IEventFlowOpions.AddAsynchronousSubscriber<,,,>` generic methods
-* Fix: `IEventFlowOpions.AddSubscriber`, `IEventFlowOpions.AddSubscribers` and  
+* Fix: `IEventFlowOpions.AddSubscriber`, `IEventFlowOpions.AddSubscribers` and
   `IEventFlowOpions.AddDefaults` now correctly registers implementations of
   `ISubscribeAsynchronousTo<,,>`
 * Obsolete:  `IEventFlowOpions.AddSubscriber` is marked obsolete in favor of its
@@ -195,7 +645,7 @@
     **deletes the index** instead of doing a _delete by query_. Make sure to
     create a separate index for each read model. Delete by query has been
     [moved to a plugin in Elasticsearch 2.x](https://www.elastic.co/blog/core-delete-by-query-is-a-plugin) and
-    deleting the entire index is now recommended    
+    deleting the entire index is now recommended
   - The default index for a read model is now `eventflow-[lower case type name]`,
     e.g. `eventflow-thingyreadmodel`, instead of merely `eventflow`
 * Breaking: The following NuGet dependencies have been updated
@@ -464,7 +914,7 @@
   registration and bootstrapping in order for developers to skip calling
   `CreateResolver()` (or `CreateContainer()` if using the `EventFlow.Autofac`
   package) completely. EventFlow will register its bootstrap services in the
-  IoC container and configure itself whenever the container is created    
+  IoC container and configure itself whenever the container is created
 * New: Introduced `IBootstrap` interface that you can register. It has a
   single `BootAsync(...)` method that will be called as soon as the IoC
   container is ready (similar to that of `IStartable` of Autofac)
@@ -716,7 +1166,7 @@
      `ICommandHandler<TAggregate,TIdentity, TCommand>`
    - `IAmReadModelFor<TEvent>` changed to
      `IAmReadModelFor<TAggregate,TIdentity,TEvent>`
-   - `IDomainEvent<TEvent>` changed to `IDomainEvent<TAggregate,TIdentity>`  
+   - `IDomainEvent<TEvent>` changed to `IDomainEvent<TAggregate,TIdentity>`
  * New: `ICommandBus.Publish` now takes a `CancellationToken` argument
  * Fixed: MSSQL should list columns to SELECT when fetching events
 

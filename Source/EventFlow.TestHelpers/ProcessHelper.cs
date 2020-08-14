@@ -1,19 +1,19 @@
-﻿// The MIT License (MIT)
-//
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// The MIT License (MIT)
+// 
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
-//
+// 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
 // the Software without restriction, including without limitation the rights to
 // use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
 // the Software, and to permit persons to whom the Software is furnished to do so,
 // subject to the following conditions:
-//
+// 
 // The above copyright notice and this permission notice shall be included in all
 // copies or substantial portions of the Software.
-//
+// 
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
 // FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
@@ -24,7 +24,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Management;
 using EventFlow.Core;
 using EventFlow.Extensions;
 using EventFlow.TestHelpers.Extensions;
@@ -58,39 +57,42 @@ namespace EventFlow.TestHelpers
                         }
                 };
             var exeName = Path.GetFileName(exePath);
-            DataReceivedEventHandler outHandler = (sender, e) =>
+
+            void OutHandler(object sender, DataReceivedEventArgs e)
+            {
+                if (!string.IsNullOrEmpty(e.Data))
                 {
-                    if (!string.IsNullOrEmpty(e.Data))
-                    {
-                        LogHelper.Log.Information($"OUT - {exeName}: {e.Data}");
-                    }
-                };
-            process.OutputDataReceived += outHandler;
-            DataReceivedEventHandler errHandler = (sender, e) =>
+                    LogHelper.Log.Information($"OUT - {exeName}: {e.Data}");
+                }
+            }
+            void ErrHandler(object sender, DataReceivedEventArgs e)
+            {
+                if (!string.IsNullOrEmpty(e.Data))
                 {
-                    if (!string.IsNullOrEmpty(e.Data))
-                    {
-                        LogHelper.Log.Error($"ERR - {exeName}: {e.Data}");
-                    }
-                };
-            process.ErrorDataReceived += errHandler;
-            Action<Process> initializeProcess = p =>
-                {
-                    LogHelper.Log.Information($"{exeName} START =======================================");
-                    p.Start();
-                    p.BeginOutputReadLine();
-                    p.BeginErrorReadLine();
-                };
-            process.WaitForOutput(initializationDone, initializeProcess);
+                    LogHelper.Log.Error($"ERR - {exeName}: {e.Data}");
+                }
+            }
+            void InitializeProcess(Process p)
+            {
+                LogHelper.Log.Information($"{exeName} START =======================================");
+                p.Start();
+                p.BeginOutputReadLine();
+                p.BeginErrorReadLine();
+            }
+
+            process.OutputDataReceived += OutHandler;
+            process.ErrorDataReceived += ErrHandler;
+            process.WaitForOutput(initializationDone, InitializeProcess);
 
             return new DisposableAction(() =>
                 {
                     try
                     {
-                        process.OutputDataReceived -= outHandler;
-                        process.ErrorDataReceived -= errHandler;
-
+                        process.OutputDataReceived -= OutHandler;
+                        process.ErrorDataReceived -= ErrHandler;
+#if NET452
                         KillProcessAndChildren(process.Id);
+#endif
                     }
                     catch (Exception e)
                     {
@@ -103,14 +105,15 @@ namespace EventFlow.TestHelpers
                 });
         }
 
+#if NET452
         private static void KillProcessAndChildren(int pid)
         {
-            var searcher = new ManagementObjectSearcher("Select * From Win32_Process Where ParentProcessID=" + pid);
+            var searcher = new System.Management.ManagementObjectSearcher("Select * From Win32_Process Where ParentProcessID=" + pid);
             var moc = searcher.Get();
 
             foreach (var o in moc)
             {
-                var mo = (ManagementObject)o;
+                var mo = (System.Management.ManagementObject)o;
                 KillProcessAndChildren(Convert.ToInt32(mo["ProcessID"]));
             }
 
@@ -126,5 +129,6 @@ namespace EventFlow.TestHelpers
                 // Process already exited.
             }
         }
+#endif
     }
 }

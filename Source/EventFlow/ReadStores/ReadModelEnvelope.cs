@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -25,36 +25,60 @@ using System;
 
 namespace EventFlow.ReadStores
 {
-    public class ReadModelEnvelope<TReadModel>
-        where TReadModel : class, IReadModel, new()
+    public abstract class ReadModelEnvelope
     {
-        private ReadModelEnvelope(
+        protected ReadModelEnvelope(
             string readModelId,
-            TReadModel readModel,
             long? version)
         {
             if (string.IsNullOrEmpty(readModelId)) throw new ArgumentNullException(nameof(readModelId));
 
             ReadModelId = readModelId;
-            ReadModel = readModel;
             Version = version;
         }
 
         public string ReadModelId { get; }
-        public TReadModel ReadModel { get; }
         public long? Version { get; }
+    }
+
+    public class ReadModelEnvelope<TReadModel> : ReadModelEnvelope
+        where TReadModel : class, IReadModel
+    {
+        private ReadModelEnvelope(
+            string readModelId,
+            TReadModel readModel,
+            long? version)
+            : base(readModelId, version)
+        {
+            ReadModel = readModel;
+        }
+
+        public TReadModel ReadModel { get; }
 
         public static ReadModelEnvelope<TReadModel> Empty(string readModelId)
         {
             return new ReadModelEnvelope<TReadModel>(readModelId, null, null);
         }
 
-        public static ReadModelEnvelope<TReadModel> With(string readModelId, TReadModel readModel)
+        public static ReadModelEnvelope<TReadModel> With(
+            string readModelId,
+            TReadModel readModel)
         {
             return new ReadModelEnvelope<TReadModel>(readModelId, readModel, null);
         }
 
-        public static ReadModelEnvelope<TReadModel> With(string readModelId, TReadModel readModel, long version)
+        public static ReadModelEnvelope<TReadModel> With(
+            string readModelId,
+            TReadModel readModel,
+            long? version)
+        {
+            return new ReadModelEnvelope<TReadModel>(readModelId, readModel, version);
+        }
+
+        public static ReadModelEnvelope<TReadModel> With(
+            string readModelId,
+            TReadModel readModel,
+            long version)
         {
             return new ReadModelEnvelope<TReadModel>(readModelId, readModel, version);
         }

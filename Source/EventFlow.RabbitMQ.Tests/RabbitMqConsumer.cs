@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -44,7 +44,7 @@ namespace EventFlow.RabbitMQ.Tests
         {
             var connectionFactory = new ConnectionFactory
                 {
-                    Uri = uri.ToString(),
+                    Uri = uri,
                 };
             _connection = connectionFactory.CreateConnection();
             _model = _connection.CreateModel();
@@ -88,11 +88,10 @@ namespace EventFlow.RabbitMQ.Tests
             {
                 if (stopwatch.Elapsed >= timeout)
                 {
-                    throw new TimeoutException($"Timedout after {stopwatch.Elapsed.TotalSeconds:0.##} seconds");
+                    throw new TimeoutException($"Timed out after {stopwatch.Elapsed.TotalSeconds:0.##} seconds");
                 }
 
-                BasicDeliverEventArgs basicDeliverEventArgs;
-                if (!_receivedMessages.TryTake(out basicDeliverEventArgs, TimeSpan.FromMilliseconds(100)))
+                if (!_receivedMessages.TryTake(out var basicDeliverEventArgs, TimeSpan.FromMilliseconds(100)))
                 {
                     continue;
                 }

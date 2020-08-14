@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -22,20 +22,15 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Autofac;
 using EventFlow.Configuration;
+using EventFlow.Configuration.Bootstraps;
 using EventFlow.Configuration.Decorators;
-using EventFlow.Core;
-using EventFlow.Core.IoC;
 using EventFlow.Extensions;
 
 namespace EventFlow.Autofac.Registrations
 {
-    internal class AutofacServiceRegistration : ServiceRegistration, IServiceRegistration
+    internal class AutofacServiceRegistration : IServiceRegistration
     {
         private readonly ContainerBuilder _containerBuilder;
         private readonly DecoratorService _decoratorService = new DecoratorService();
@@ -49,6 +44,7 @@ namespace EventFlow.Autofac.Registrations
             _containerBuilder.RegisterType<AutofacResolver>().As<IResolver>();
             _containerBuilder.Register(c => new AutofacScopeResolver(c.Resolve<ILifetimeScope>().BeginLifetimeScope())).As<IScopeResolver>();
             _containerBuilder.Register<IDecoratorService>(_ => _decoratorService).SingleInstance();
+            _containerBuilder.RegisterType<Bootstrapper>().As<IBootstrapper>().SingleInstance();
         }
 
         public void Register<TService, TImplementation>(
@@ -61,6 +57,10 @@ namespace EventFlow.Autofac.Registrations
             if (lifetime == Lifetime.Singleton)
             {
                 registration.SingleInstance();
+            }
+            if (lifetime == Lifetime.Scoped)
+            {
+                registration.InstancePerLifetimeScope();
             }
 
             var serviceRegistration = _containerBuilder
@@ -95,6 +95,10 @@ namespace EventFlow.Autofac.Registrations
             {
                 registration.SingleInstance();
             }
+            if (lifetime == Lifetime.Scoped)
+            {
+                registration.InstancePerLifetimeScope();
+            }
             if (keepDefault)
             {
                 registration.PreserveExistingDefaults();
@@ -119,6 +123,10 @@ namespace EventFlow.Autofac.Registrations
             {
                 registration.SingleInstance();
             }
+            if (lifetime == Lifetime.Scoped)
+            {
+                registration.InstancePerLifetimeScope();
+            }
             if (keepDefault)
             {
                 registration.PreserveExistingDefaults();
@@ -141,6 +149,10 @@ namespace EventFlow.Autofac.Registrations
             {
                 registration.SingleInstance();
             }
+            if (lifetime == Lifetime.Scoped)
+            {
+                registration.InstancePerLifetimeScope();
+            }
             if (keepDefault)
             {
                 registration.PreserveExistingDefaults();
@@ -158,6 +170,10 @@ namespace EventFlow.Autofac.Registrations
             if (lifetime == Lifetime.Singleton)
             {
                 registration.SingleInstance();
+            }
+            if (lifetime == Lifetime.Scoped)
+            {
+                registration.InstancePerLifetimeScope();
             }
         }
 
@@ -189,25 +205,19 @@ namespace EventFlow.Autofac.Registrations
 
         public class AutofacStartable : IStartable
         {
-            private readonly IReadOnlyCollection<IBootstrap> _bootstraps;
+            private readonly IBootstrapper _bootstrapper;
 
-            public AutofacStartable(
-                IEnumerable<IBootstrap> bootstraps)
+            public AutofacStartable(IBootstrapper bootstrapper)
             {
-                _bootstraps = OrderBootstraps(bootstraps);
+                _bootstrapper = bootstrapper;
             }
 
             public void Start()
             {
-                using (var a = AsyncHelper.Wait)
-                {
-                    a.Run(StartAsync(CancellationToken.None));
-                }
-            }
-
-            private Task StartAsync(CancellationToken cancellationToken)
-            {
-                return Task.WhenAll(_bootstraps.Select(b => b.BootAsync(cancellationToken)));
+#pragma warning disable 618
+                // TODO: Figure out bootstrapping alternative for 1.0
+                _bootstrapper.Start();
+#pragma warning restore 618
             }
         }
     }

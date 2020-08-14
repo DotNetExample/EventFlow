@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -23,7 +23,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using EventFlow.Aggregates;
@@ -72,15 +71,17 @@ namespace EventFlow.TestHelpers.Suites
         }
 
         [Test]
-        [Timeout(10000)]
         public async Task AsynchronousSubscribesGetInvoked()
         {
-            // Act
-            var pingId = await PublishPingCommandAsync(A<ThingyId>()).ConfigureAwait(false);
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+            {
+                // Act
+                var pingId = await PublishPingCommandAsync(A<ThingyId>(), cts.Token).ConfigureAwait(false);
 
-            // Assert
-            var receivedPingId = _testAsynchronousSubscriber.PingIds.Take();
-            receivedPingId.Should().IsSameOrEqualTo(pingId);
+                // Assert
+                var receivedPingId = await Task.Run(() => _testAsynchronousSubscriber.PingIds.Take(), cts.Token).ConfigureAwait(false);
+                receivedPingId.Should().IsSameOrEqualTo(pingId);
+            }
         }
 
         [Test]

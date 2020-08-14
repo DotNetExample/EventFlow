@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="../Common.props" />
   <PropertyGroup>
-    <TargetFramework>net451</TargetFramework>
+    <TargetFramework>net452</TargetFramework>
     <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
     <GenerateAssemblyInfo>True</GenerateAssemblyInfo>
     <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
@@ -9,23 +9,23 @@
     <Title>EventFlow.Owin</Title>
     <Authors>Rasmus Mikkelsen</Authors>
     <Company>Rasmus Mikkelsen</Company>
-    <Copyright>Copyright (c) Rasmus Mikkelsen 2015 - 2017</Copyright>
+    <Copyright>Copyright (c) Rasmus Mikkelsen 2015 - 2019</Copyright>
     <Description>OWIN support for EventFlow</Description>
     <PackageTags>CQRS ES event sourcing OWIN</PackageTags>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/eventflow/EventFlow</RepositoryUrl>
-    <PackageProjectUrl>http://docs.geteventflow.net/</PackageProjectUrl>
+    <PackageProjectUrl>https://docs.geteventflow.net/</PackageProjectUrl>
     <PackageIconUrl>https://raw.githubusercontent.com/eventflow/EventFlow/develop/icon-128.png</PackageIconUrl>
-    <PackageLicenseUrl>https://raw.githubusercontent.com/eventflow/EventFlow/develop/LICENSE</PackageLicenseUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <NeutralLanguage>en-US</NeutralLanguage>
     <PackageReleaseNotes>UPDATED BY BUILD</PackageReleaseNotes>
   </PropertyGroup>
-  <ItemGroup>
-    <Folder Include="Properties\" />
-  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Owin" Version="3.1.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
   </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\EventFlow\EventFlow.csproj" />
   </ItemGroup>

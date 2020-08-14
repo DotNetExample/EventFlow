@@ -1,7 +1,7 @@
 // The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -115,7 +115,7 @@ namespace EventFlow.RabbitMQ.Integrations
             IReadOnlyCollection<RabbitMqMessage> messages)
         {
             _log.Verbose(
-                "Publishing {0} domain domain events to RabbitMQ host '{1}'",
+                "Publishing {0} domain events to RabbitMQ host '{1}'",
                 messages.Count,
                 _configuration.Uri.Host);
 
@@ -130,12 +130,16 @@ namespace EventFlow.RabbitMQ.Integrations
                 basicProperties.ContentEncoding = "utf-8";
                 basicProperties.ContentType = "application/json";
                 basicProperties.MessageId = message.MessageId.Value;
-
-                // TODO: Evil or not evil? Do a Task.Run here?
-                model.BasicPublish(message.Exchange.Value, message.RoutingKey.Value, false, basicProperties, bytes);
+                PublishSingleMessage(model, message, bytes, basicProperties);
             }
 
             return Task.FromResult(0);
+        }
+
+        protected virtual void PublishSingleMessage(IModel model, RabbitMqMessage message, byte[] bytes, IBasicProperties basicProperties)
+        {
+            // TODO: Evil or not evil? Do a Task.Run here?
+            model.BasicPublish(message.Exchange.Value, message.RoutingKey.Value, false, basicProperties, bytes);
         }
 
         public void Dispose()

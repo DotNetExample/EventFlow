@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -37,6 +37,7 @@ using EventFlow.Logs;
 using EventFlow.Owin.Extensions;
 using EventFlow.Owin.Middlewares;
 using EventFlow.TestHelpers;
+using EventFlow.TestHelpers.Aggregates.Queries;
 using Owin;
 
 namespace EventFlow.Owin.Tests.IntegrationTests.Site
@@ -92,6 +93,7 @@ namespace EventFlow.Owin.Tests.IntegrationTests.Site
                 .UseAutofacContainerBuilder(containerBuilder)
                 .AddDefaults(EventFlowTestHelpers.Assembly)
                 .AddOwinMetadataProviders()
+                .RegisterServices(sr => sr.Register<IScopedContext, ScopedContext>(Lifetime.Scoped))
                 .UseFilesEventStore(FilesEventStoreConfiguration.Create(storePath))
                 .RegisterServices(f => f.Register(r =>  new DirectoryCleaner(storePath), Lifetime.Singleton))
                 .CreateContainer(false);

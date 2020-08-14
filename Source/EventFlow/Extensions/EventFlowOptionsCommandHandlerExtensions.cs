@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -39,7 +39,8 @@ namespace EventFlow.Extensions
             predicate = predicate ?? (t => true);
             var commandHandlerTypes = fromAssembly
                 .GetTypes()
-                .Where(t => t.GetTypeInfo().GetInterfaces().Any(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,,,>)))
+                .Where(t => t.GetTypeInfo().GetInterfaces().Any(IsCommandHandlerInterface))
+                .Where(t => !t.HasConstructorParameterOfType(IsCommandHandlerInterface))
                 .Where(t => predicate(t));
             return eventFlowOptions.AddCommandHandlers(commandHandlerTypes);
         }
@@ -62,7 +63,7 @@ namespace EventFlow.Extensions
                 var handlesCommandTypes = t
                     .GetTypeInfo()
                     .GetInterfaces()
-                    .Where(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,,,>))
+                    .Where(IsCommandHandlerInterface)
                     .ToList();
                 if (!handlesCommandTypes.Any())
                 {
@@ -79,6 +80,11 @@ namespace EventFlow.Extensions
             }
 
             return eventFlowOptions;
+        }
+
+        private static bool IsCommandHandlerInterface(this Type type)
+        {
+            return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(ICommandHandler<,,,>);
         }
     }
 }

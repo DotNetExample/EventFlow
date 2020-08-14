@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -54,6 +54,19 @@ namespace EventFlow.Tests.UnitTests.ReadStores
 
             public void Apply(IReadModelContext context, IDomainEvent<ThingyAggregate, ThingyId, ThingyPingEvent> domainEvent)
             {
+                PingEventsReceived = true;
+            }
+        }
+
+        public class AsyncPingReadModel : IReadModel,
+            IAmAsyncReadModelFor<ThingyAggregate, ThingyId, ThingyPingEvent>
+        {
+            public bool PingEventsReceived { get; private set; }
+
+            public async Task ApplyAsync(IReadModelContext context, IDomainEvent<ThingyAggregate, ThingyId, ThingyPingEvent> domainEvent,
+                CancellationToken cancellationToken)
+            {
+                await Task.Delay(50, cancellationToken).ConfigureAwait(false);
                 PingEventsReceived = true;
             }
         }
@@ -148,7 +161,7 @@ namespace EventFlow.Tests.UnitTests.ReadStores
         }
 
         [Test]
-        public void UpdateReturnsFalseIfNoEventsWasApplied()
+        public async Task UpdateReturnsFalseIfNoEventsWasApplied()
         {
             // Arrange
             var events = new[]
@@ -157,19 +170,18 @@ namespace EventFlow.Tests.UnitTests.ReadStores
                 };
 
             // Act
-            var appliedAny = Sut.UpdateReadModelAsync(
+            var appliedAny = await Sut.UpdateReadModelAsync(
                 new PingReadModel(),
                 events,
                 A<IReadModelContext>(), 
-                CancellationToken.None)
-                .Result;
+                CancellationToken.None);
 
             // Assert
             appliedAny.Should().BeFalse();
         }
 
         [Test]
-        public void UpdateReturnsTrueIfEventsWereApplied()
+        public async Task UpdateReturnsTrueIfEventsWereApplied()
         {
             // Arrange
             var events = new[]
@@ -178,12 +190,11 @@ namespace EventFlow.Tests.UnitTests.ReadStores
                 };
 
             // Act
-            var appliedAny = Sut.UpdateReadModelAsync(
+            var appliedAny = await Sut.UpdateReadModelAsync(
                 new PingReadModel(),
                 events,
                 A<IReadModelContext>(),
-                CancellationToken.None)
-                .Result;
+                CancellationToken.None);
 
             // Assert
             appliedAny.Should().BeTrue();
@@ -198,6 +209,28 @@ namespace EventFlow.Tests.UnitTests.ReadStores
                     ToDomainEvent(A<ThingyPingEvent>()),
                 };
             var readModel = new PingReadModel();
+
+            // Act
+            await Sut.UpdateReadModelAsync(
+                readModel,
+                events,
+                A<IReadModelContext>(),
+                CancellationToken.None)
+                .ConfigureAwait(false);
+
+            // Assert
+            readModel.PingEventsReceived.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task AsyncReadModelReceivesEvent()
+        {
+            // Arrange
+            var events = new[]
+                {
+                    ToDomainEvent(A<ThingyPingEvent>()),
+                };
+            var readModel = new AsyncPingReadModel();
 
             // Act
             await Sut.UpdateReadModelAsync(

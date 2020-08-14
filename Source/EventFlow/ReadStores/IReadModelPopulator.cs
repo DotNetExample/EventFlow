@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -30,16 +30,21 @@ namespace EventFlow.ReadStores
     public interface IReadModelPopulator
     {
         Task PurgeAsync<TReadModel>(CancellationToken cancellationToken)
-            where TReadModel : class, IReadModel, new();
+            where TReadModel : class, IReadModel;
 
         Task PopulateAsync<TReadModel>(CancellationToken cancellationToken)
-            where TReadModel : class, IReadModel, new();
+            where TReadModel : class, IReadModel;
 
         Task PopulateAsync(
             Type readModelType,
             CancellationToken cancellationToken);
 
         Task PurgeAsync(
+            Type readModelType,
+            CancellationToken cancellationToken);
+
+        Task DeleteAsync(
+            string id,
             Type readModelType,
             CancellationToken cancellationToken);
     }

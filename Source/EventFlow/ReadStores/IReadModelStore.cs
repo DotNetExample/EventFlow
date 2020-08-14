@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -31,21 +31,25 @@ namespace EventFlow.ReadStores
 {
     public interface IReadModelStore
     {
+        Task DeleteAsync(
+            string id,
+            CancellationToken cancellationToken);
+
         Task DeleteAllAsync(
             CancellationToken cancellationToken);
     }
 
     public interface IReadModelStore<TReadModel> : IReadModelStore
-        where TReadModel : class, IReadModel, new()
+        where TReadModel : class, IReadModel
     {
         Task<ReadModelEnvelope<TReadModel>> GetAsync(
             string id,
             CancellationToken cancellationToken);
 
-        Task UpdateAsync(
-            IReadOnlyCollection<ReadModelUpdate> readModelUpdates,
-            IReadModelContext readModelContext,
-            Func<IReadModelContext, IReadOnlyCollection<IDomainEvent>, ReadModelEnvelope<TReadModel>, CancellationToken, Task<ReadModelEnvelope<TReadModel>>> updateReadModel,
+        Task UpdateAsync(IReadOnlyCollection<ReadModelUpdate> readModelUpdates,
+            IReadModelContextFactory readModelContextFactory,
+            Func<IReadModelContext, IReadOnlyCollection<IDomainEvent>, ReadModelEnvelope<TReadModel>, CancellationToken,
+                Task<ReadModelUpdateResult<TReadModel>>> updateReadModel,
             CancellationToken cancellationToken);
     }
 }

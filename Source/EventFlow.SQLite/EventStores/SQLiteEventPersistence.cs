@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -68,24 +68,24 @@ namespace EventFlow.SQLite.EventStores
             var startPosition = globalPosition.IsStart
                 ? 0
                 : long.Parse(globalPosition.Value);
-            var endPosition = startPosition + pageSize;
 
             const string sql = @"
                 SELECT
                     GlobalSequenceNumber, BatchId, AggregateId, AggregateName, Data, Metadata, AggregateSequenceNumber
                 FROM EventFlow
                 WHERE
-                    GlobalSequenceNumber >= @FromId AND GlobalSequenceNumber <= @ToId
+                    GlobalSequenceNumber >= @startPosition
                 ORDER BY
-                    GlobalSequenceNumber ASC";
+                    GlobalSequenceNumber ASC
+                LIMIT @pageSize";
             var eventDataModels = await _connection.QueryAsync<EventDataModel>(
-                Label.Named("mssql-fetch-events"),
-                cancellationToken,
-                sql,
-                new
+                    Label.Named("sqlite-fetch-events"),
+                    cancellationToken,
+                    sql,
+                    new
                     {
-                        FromId = startPosition,
-                        ToId = endPosition,
+                        startPosition,
+                        pageSize
                     })
                 .ConfigureAwait(false);
 
@@ -119,7 +119,7 @@ namespace EventFlow.SQLite.EventStores
                 .ToList();
 
             _log.Verbose(
-                "Committing {0} events to MSSQL event store for entity with ID '{1}'",
+                "Committing {0} events to SQLite event store for entity with ID '{1}'",
                 eventDataModels.Count,
                 id);
 
@@ -198,7 +198,7 @@ namespace EventFlow.SQLite.EventStores
         {
             const string sql = @"DELETE FROM EventFlow WHERE AggregateId = @AggregateId";
             var affectedRows = await _connection.ExecuteAsync(
-                Label.Named("mssql-delete-aggregate"),
+                Label.Named("sqlite-delete-aggregate"),
                 cancellationToken,
                 sql,
                 new { AggregateId = id.Value })

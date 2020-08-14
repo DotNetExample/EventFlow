@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="../Common.props" />
   <PropertyGroup>
-    <TargetFramework>net451</TargetFramework>
+    <TargetFrameworks>net462;netstandard2.0</TargetFrameworks>
     <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
     <GenerateAssemblyInfo>True</GenerateAssemblyInfo>
     <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
@@ -9,23 +9,23 @@
     <Title>EventFlow.EventStores.EventStore</Title>
     <Authors>Rasmus Mikkelsen</Authors>
     <Company>Rasmus Mikkelsen</Company>
-    <Copyright>Copyright (c) Rasmus Mikkelsen 2015 - 2017</Copyright>
+    <Copyright>Copyright (c) Rasmus Mikkelsen 2015 - 2019</Copyright>
     <Description>Event Store event store for EventFlow. Download it from https://geteventstore.com/</Description>
     <PackageTags>CQRS ES event sourcing EventStore</PackageTags>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/eventflow/EventFlow</RepositoryUrl>
-    <PackageProjectUrl>http://docs.geteventflow.net/</PackageProjectUrl>
+    <PackageProjectUrl>https://docs.geteventflow.net/</PackageProjectUrl>
     <PackageIconUrl>https://raw.githubusercontent.com/eventflow/EventFlow/develop/icon-128.png</PackageIconUrl>
-    <PackageLicenseUrl>https://raw.githubusercontent.com/eventflow/EventFlow/develop/LICENSE</PackageLicenseUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <NeutralLanguage>en-US</NeutralLanguage>
     <PackageReleaseNotes>UPDATED BY BUILD</PackageReleaseNotes>
   </PropertyGroup>
+   
   <ItemGroup>
-    <Folder Include="Properties\" />
+    <PackageReference Include="EventStore.Client" Version="5.0.1" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="EventStore.Client" Version="3.9.5" />
-  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\EventFlow\EventFlow.csproj" />
   </ItemGroup>

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -26,11 +26,13 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using EventFlow.Aggregates;
+using EventFlow.Aggregates.ExecutionResults;
 using EventFlow.Exceptions;
 using EventFlow.Snapshots;
 using EventFlow.Snapshots.Strategies;
 using EventFlow.TestHelpers.Aggregates.Entities;
 using EventFlow.TestHelpers.Aggregates.Events;
+using EventFlow.TestHelpers.Aggregates.Queries;
 using EventFlow.TestHelpers.Aggregates.Snapshots;
 using EventFlow.TestHelpers.Aggregates.ValueObjects;
 
@@ -38,10 +40,15 @@ namespace EventFlow.TestHelpers.Aggregates
 {
     [AggregateName("Thingy")]
     public class ThingyAggregate : SnapshotAggregateRoot<ThingyAggregate, ThingyId, ThingySnapshot>,
-        IEmit<ThingyDomainErrorAfterFirstEvent>
+        IEmit<ThingyDomainErrorAfterFirstEvent>,
+        IEmit<ThingyDeletedEvent>
     {
-        public const int SnapshotEveryVersion = 10;
+        // ReSharper disable once NotAccessedField.Local
+        private readonly IScopedContext _scopedContext;
+        // We just hold a reference
 
+        public const int SnapshotEveryVersion = 10;
+        
         private readonly List<PingId> _pingsReceived = new List<PingId>();
         private readonly List<ThingyMessage> _messages = new List<ThingyMessage>(); 
 
@@ -49,12 +56,15 @@ namespace EventFlow.TestHelpers.Aggregates
         public IReadOnlyCollection<PingId> PingsReceived => _pingsReceived;
         public IReadOnlyCollection<ThingyMessage> Messages => _messages;
         public IReadOnlyCollection<ThingySnapshotVersion> SnapshotVersions { get; private set; } = new ThingySnapshotVersion[] {};
+        public bool IsDeleted { get; private set; }
 
-        public ThingyAggregate(ThingyId id)
+        public ThingyAggregate(ThingyId id, IScopedContext scopedContext)
             : base(id, SnapshotEveryFewVersionsStrategy.With(SnapshotEveryVersion))
         {
+            _scopedContext = scopedContext;
             Register<ThingyPingEvent>(e => _pingsReceived.Add(e.PingId));
             Register<ThingyMessageAddedEvent>(e => _messages.Add(e.ThingyMessage));
+            Register<ThingyMessageHistoryAddedEvent>(e => _messages.AddRange(e.ThingyMessages));
             Register<ThingySagaStartRequestedEvent>(e => {/* do nothing */});
             Register<ThingySagaCompleteRequestedEvent>(e => {/* do nothing */});
         }
@@ -79,9 +89,29 @@ namespace EventFlow.TestHelpers.Aggregates
             Emit(new ThingyMessageAddedEvent(message));
         }
 
+        public void AddMessageHistory(ThingyMessage[] messages)
+        {
+            var existingIds = _messages.Select(m => m.Id).Intersect(_messages.Select(m => m.Id)).ToArray();
+            if (existingIds.Any())
+            {
+                throw DomainError.With($"Thingy '{Id}' already has messages with IDs " +
+                                       $"'{string.Join(",", existingIds.Select(id => id.ToString()))}'");
+            }
+
+            Emit(new ThingyMessageHistoryAddedEvent(messages));
+        }
+
         public void Ping(PingId pingId)
         {
             Emit(new ThingyPingEvent(pingId));
+        }
+
+        public IExecutionResult PingMaybe(PingId pingId, bool isSuccess)
+        {
+            Emit(new ThingyPingEvent(pingId));
+            return isSuccess
+                ? ExecutionResult.Success()
+                : ExecutionResult.Failed();
         }
 
         public void RequestSagaStart()
@@ -99,6 +129,11 @@ namespace EventFlow.TestHelpers.Aggregates
             DomainErrorAfterFirstReceived = true;
         }
 
+        void IEmit<ThingyDeletedEvent>.Apply(ThingyDeletedEvent e)
+        {
+            IsDeleted = true;
+        }
+
         protected override Task<ThingySnapshot> CreateSnapshotAsync(CancellationToken cancellationToken)
         {
             return Task.FromResult(new ThingySnapshot(
@@ -111,6 +146,11 @@ namespace EventFlow.TestHelpers.Aggregates
             _pingsReceived.AddRange(snapshot.PingsReceived);
             SnapshotVersions = snapshot.PreviousVersions;
             return Task.FromResult(0);
+        }
+
+        public void Delete()
+        {
+            Emit(new ThingyDeletedEvent());
         }
     }
 }

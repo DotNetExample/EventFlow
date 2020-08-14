@@ -1,7 +1,7 @@
 ﻿// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -21,8 +21,7 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-using System.Threading;
-using System.Threading.Tasks;
+using System;
 using EventFlow.Configuration;
 using EventFlow.Extensions;
 using EventFlow.MsSql.EventStores;
@@ -30,6 +29,7 @@ using EventFlow.MsSql.Extensions;
 using EventFlow.MsSql.Tests.IntegrationTests.ReadStores.QueryHandlers;
 using EventFlow.MsSql.Tests.IntegrationTests.ReadStores.ReadModels;
 using EventFlow.TestHelpers;
+using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Entities;
 using EventFlow.TestHelpers.MsSql;
 using EventFlow.TestHelpers.Suites;
@@ -40,6 +40,8 @@ namespace EventFlow.MsSql.Tests.IntegrationTests.ReadStores
     [Category(Categories.Integration)]
     public class MsSqlReadModelStoreTests : TestSuiteForReadModelStore
     {
+        protected override Type ReadModelType { get; } = typeof(MsSqlThingyReadModel);
+
         private IMsSqlDatabase _testDatabase;
 
         protected override IRootResolver CreateRootResolver(IEventFlowOptions eventFlowOptions)
@@ -62,16 +64,6 @@ namespace EventFlow.MsSql.Tests.IntegrationTests.ReadStores
             databaseMigrator.MigrateDatabaseUsingEmbeddedScripts(GetType().Assembly);
 
             return resolver;
-        }
-
-        protected override Task PurgeTestAggregateReadModelAsync()
-        {
-            return ReadModelPopulator.PurgeAsync<MsSqlThingyReadModel>(CancellationToken.None);
-        }
-
-        protected override Task PopulateTestAggregateReadModelAsync()
-        {
-            return ReadModelPopulator.PopulateAsync<MsSqlThingyReadModel>(CancellationToken.None);
         }
 
         [TearDown]

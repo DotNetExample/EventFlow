@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -25,6 +25,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using EventFlow.Aggregates.ExecutionResults;
 using EventFlow.Core;
 
 namespace EventFlow.Aggregates
@@ -44,6 +45,15 @@ namespace EventFlow.Aggregates
             CancellationToken cancellationToken)
             where TAggregate : IAggregateRoot<TIdentity>
             where TIdentity : IIdentity;
+
+        Task<IAggregateUpdateResult<TExecutionResult>> UpdateAsync<TAggregate, TIdentity, TExecutionResult>(
+            TIdentity id,
+            ISourceId sourceId,
+            Func<TAggregate, CancellationToken, Task<TExecutionResult>> updateAggregate,
+            CancellationToken cancellationToken)
+            where TAggregate : IAggregateRoot<TIdentity>
+            where TIdentity : IIdentity
+            where TExecutionResult : IExecutionResult;
 
         Task<IReadOnlyCollection<IDomainEvent>> StoreAsync<TAggregate, TIdentity>(
             TAggregate aggregate,

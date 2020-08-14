@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -21,18 +21,23 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using EventFlow.Aggregates;
+using EventFlow.Logs;
+using EventFlow.ReadStores;
 using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Commands;
 using EventFlow.TestHelpers.Aggregates.Entities;
 using EventFlow.TestHelpers.Aggregates.Queries;
 using EventFlow.TestHelpers.Aggregates.ValueObjects;
 using EventFlow.TestHelpers.Extensions;
+using AutoFixture;
 using FluentAssertions;
 using NUnit.Framework;
-using Ploeh.AutoFixture;
 
 namespace EventFlow.TestHelpers.Suites
 {
@@ -108,7 +113,7 @@ namespace EventFlow.TestHelpers.Suites
 
             // Assert
             returnedThingyMessages.Should().HaveCount(thingyMessages.Count);
-            returnedThingyMessages.ShouldAllBeEquivalentTo(thingyMessages);
+            returnedThingyMessages.Should().BeEquivalentTo(thingyMessages);
         }
 
         [Test]
@@ -130,7 +135,7 @@ namespace EventFlow.TestHelpers.Suites
 
             // Assert
             thingy.PingsReceived.Should().Be(pingIds.Count);
-            returnedThingyMessages.ShouldAllBeEquivalentTo(returnedThingyMessages);
+            returnedThingyMessages.Should().BeEquivalentTo(thingyMessages);
         }
 
         [Test]
@@ -141,11 +146,38 @@ namespace EventFlow.TestHelpers.Suites
             await PublishPingCommandAsync(id).ConfigureAwait(false);
 
             // Act
-            await PurgeTestAggregateReadModelAsync().ConfigureAwait(false);
+            await ReadModelPopulator.PurgeAsync(ReadModelType, CancellationToken.None).ConfigureAwait(false);
             var readModel = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id)).ConfigureAwait(false);
 
             // Assert
             readModel.Should().BeNull();
+        }
+
+        [Test]
+        public async Task DeleteRemovesSpecificReadModel()
+        {
+            // Arrange
+            var id1 = ThingyId.New;
+            var id2 = ThingyId.New;
+            await PublishPingCommandAsync(id1).ConfigureAwait(false);
+            await PublishPingCommandAsync(id2).ConfigureAwait(false);
+            var readModel1 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id1)).ConfigureAwait(false);
+            var readModel2 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id2)).ConfigureAwait(false);
+            readModel1.Should().NotBeNull();
+            readModel2.Should().NotBeNull();
+
+            // Act
+            await ReadModelPopulator.DeleteAsync(
+                id1.Value,
+                ReadModelType,
+                CancellationToken.None)
+                .ConfigureAwait(false);
+
+            // Assert
+            readModel1 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id1)).ConfigureAwait(false);
+            readModel2 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id2)).ConfigureAwait(false);
+            readModel1.Should().BeNull();
+            readModel2.Should().NotBeNull();
         }
 
         [Test]
@@ -158,8 +190,8 @@ namespace EventFlow.TestHelpers.Suites
             await PublishPingCommandsAsync(id2, 5).ConfigureAwait(false);
 
             // Act
-            await PurgeTestAggregateReadModelAsync().ConfigureAwait(false);
-            await PopulateTestAggregateReadModelAsync().ConfigureAwait(false);
+            await ReadModelPopulator.PurgeAsync(ReadModelType, CancellationToken.None).ConfigureAwait(false);
+            await ReadModelPopulator.PopulateAsync(ReadModelType, CancellationToken.None).ConfigureAwait(false);
 
             // Assert
             var readModel1 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id1)).ConfigureAwait(false);
@@ -175,15 +207,126 @@ namespace EventFlow.TestHelpers.Suites
             // Arrange
             var id = ThingyId.New;
             await PublishPingCommandsAsync(id, 2).ConfigureAwait(false);
-            await PurgeTestAggregateReadModelAsync().ConfigureAwait(false);
+            await ReadModelPopulator.PurgeAsync(ReadModelType, CancellationToken.None).ConfigureAwait(false);
             
             // Act
-            await PopulateTestAggregateReadModelAsync().ConfigureAwait(false);
+            await ReadModelPopulator.PopulateAsync(ReadModelType, CancellationToken.None).ConfigureAwait(false);
             var readModel = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id)).ConfigureAwait(false);
 
             // Assert
             readModel.Should().NotBeNull();
             readModel.PingsReceived.Should().Be(2);
+        }
+
+        [Test]
+        public async Task MultipleUpdatesAreHandledCorrect()
+        {
+            // Arrange
+            var id = ThingyId.New;
+            var pingIds = new List<PingId>
+                {
+                    await PublishPingCommandAsync(id).ConfigureAwait(false)
+                };
+
+            for (var i = 0; i < 5; i++)
+            {
+                // Act
+                pingIds.Add(await PublishPingCommandAsync(id).ConfigureAwait(false));
+
+                // Assert
+                var readModel = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id)).ConfigureAwait(false);
+                readModel.PingsReceived.Should().Be(pingIds.Count);
+            }
+        }
+
+        [Test]
+        public virtual async Task OptimisticConcurrencyCheck()
+        {
+            // Simulates a state in which two read models have been loaded to memory
+            // and each is updated independently. The read store should detect the
+            // concurrent update, reload the read model and apply the updates once
+            // again.
+            // A decorated DelayingReadModelDomainEventApplier is used to introduce
+            // a controlled delay and a set of AutoResetEvent is used to ensure
+            // that the read store is in the desired state before continuing
+
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+            {
+                // Arrange
+                var id = ThingyId.New;
+                var waitState = new WaitState();
+                await PublishPingCommandsAsync(id, 1, cts.Token).ConfigureAwait(false);
+
+                // Arrange
+                _waitStates[id.Value] = waitState;
+                var delayedPublishTask = Task.Run(() => PublishPingCommandsAsync(id, 1, cts.Token), cts.Token);
+                waitState.ReadStoreReady.WaitOne(TimeSpan.FromSeconds(10));
+                _waitStates.Remove(id.Value);
+                await PublishPingCommandsAsync(id, 1, cts.Token).ConfigureAwait(false);
+                waitState.ReadStoreContinue.Set();
+                await delayedPublishTask.ConfigureAwait(false);
+
+                // Assert
+                var readModel = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id), cts.Token).ConfigureAwait(false);
+                readModel.PingsReceived.Should().Be(3);
+            }
+        }
+
+        [Test]
+        public async Task MarkingForDeletionRemovesSpecificReadModel()
+        {
+            // Arrange
+            var id1 = ThingyId.New;
+            var id2 = ThingyId.New;
+            await PublishPingCommandAsync(id1).ConfigureAwait(false);
+            await PublishPingCommandAsync(id2).ConfigureAwait(false);
+            var readModel1 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id1)).ConfigureAwait(false);
+            var readModel2 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id2)).ConfigureAwait(false);
+            readModel1.Should().NotBeNull();
+            readModel2.Should().NotBeNull();
+
+            // Act
+            await CommandBus.PublishAsync(new ThingyDeleteCommand(id1), CancellationToken.None);
+
+            // Assert
+            readModel1 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id1)).ConfigureAwait(false);
+            readModel2 = await QueryProcessor.ProcessAsync(new ThingyGetQuery(id2)).ConfigureAwait(false);
+            readModel1.Should().BeNull();
+            readModel2.Should().NotBeNull();
+        }
+
+        [Test]
+        public async Task CanStoreMessageHistory()
+        {
+            // Arrange
+            var thingyId = ThingyId.New;
+            var thingyMessages = Fixture.CreateMany<ThingyMessage>(5).ToList();
+            var command = new ThingyAddMessageHistoryCommand(thingyId, thingyMessages);
+            await CommandBus.PublishAsync(command, CancellationToken.None);
+
+            // Act
+            var returnedThingyMessages = await QueryProcessor.ProcessAsync(new ThingyGetMessagesQuery(thingyId)).ConfigureAwait(false);
+
+            // Assert
+            returnedThingyMessages.Should().HaveCount(thingyMessages.Count);
+            returnedThingyMessages.Should().BeEquivalentTo(thingyMessages);
+        }
+
+        private class WaitState
+        {
+            public AutoResetEvent ReadStoreReady { get; } = new AutoResetEvent(false);
+            public AutoResetEvent ReadStoreContinue { get; } = new AutoResetEvent(false);
+        }
+
+        private readonly Dictionary<string, WaitState> _waitStates = new Dictionary<string, WaitState>();
+
+        protected override IEventFlowOptions Options(IEventFlowOptions eventFlowOptions)
+        {
+            _waitStates.Clear();
+
+            return base.Options(eventFlowOptions)
+                .RegisterServices(sr => sr.Decorate<IReadModelDomainEventApplier>(
+                    (r, dea) => new DelayingReadModelDomainEventApplier(dea, _waitStates, r.Resolver.Resolve<ILog>())));
         }
 
         private async Task<IReadOnlyCollection<ThingyMessage>> CreateAndPublishThingyMessagesAsync(ThingyId thingyId, int count)
@@ -193,8 +336,47 @@ namespace EventFlow.TestHelpers.Suites
             return thingyMessages;
         }
 
-        protected abstract Task PurgeTestAggregateReadModelAsync();
+        protected abstract Type ReadModelType { get; }
 
-        protected abstract Task PopulateTestAggregateReadModelAsync();
+        private class DelayingReadModelDomainEventApplier : IReadModelDomainEventApplier
+        {
+            private readonly IReadModelDomainEventApplier _readModelDomainEventApplier;
+            private readonly IReadOnlyDictionary<string, WaitState> _waitStates;
+            private readonly ILog _log;
+
+            public DelayingReadModelDomainEventApplier(
+                IReadModelDomainEventApplier readModelDomainEventApplier,
+                IReadOnlyDictionary<string, WaitState> waitStates,
+                ILog log)
+            {
+                _readModelDomainEventApplier = readModelDomainEventApplier;
+                _waitStates = waitStates;
+                _log = log;
+            }
+
+            public async Task<bool> UpdateReadModelAsync<TReadModel>(
+                TReadModel readModel,
+                IReadOnlyCollection<IDomainEvent> domainEvents,
+                IReadModelContext readModelContext,
+                CancellationToken cancellationToken)
+                where TReadModel : IReadModel
+            {
+                _waitStates.TryGetValue(domainEvents.First().GetIdentity().Value, out var waitState);
+
+                if (waitState != null)
+                {
+                    _log.Information("Waiting for access to read model");
+                    waitState.ReadStoreReady.Set();
+                    waitState.ReadStoreContinue.WaitOne();
+                }
+
+                return await _readModelDomainEventApplier.UpdateReadModelAsync(
+                    readModel,
+                    domainEvents,
+                    readModelContext,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
     }
 }

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -30,10 +30,10 @@ using EventFlow.EventStores;
 using EventFlow.Logs;
 using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Entities;
+using AutoFixture;
+using AutoFixture.AutoMoq;
 using Moq;
 using NUnit.Framework;
-using Ploeh.AutoFixture;
-using Ploeh.AutoFixture.AutoMoq;
 
 namespace EventFlow.TestHelpers
 {
@@ -79,10 +79,10 @@ namespace EventFlow.TestHelpers
             return instance;
         }
 
-        protected Mock<T> InjectMock<T>()
+        protected Mock<T> InjectMock<T>(params object[] args)
             where T : class
         {
-            var mock = new Mock<T>();
+            var mock = new Mock<T>(args);
             Fixture.Inject(mock.Object);
             return mock;
         }
@@ -107,10 +107,20 @@ namespace EventFlow.TestHelpers
             int aggregateSequenceNumber = 0)
             where TAggregateEvent : IAggregateEvent
         {
+            return ToDomainEvent(A<ThingyId>(), aggregateEvent, aggregateSequenceNumber);
+        }
+
+        protected IDomainEvent<ThingyAggregate, ThingyId> ToDomainEvent<TAggregateEvent>(
+            ThingyId thingyId,
+            TAggregateEvent aggregateEvent,
+            int aggregateSequenceNumber = 0)
+            where TAggregateEvent : IAggregateEvent
+        {
             var metadata = new Metadata
                 {
                     Timestamp = A<DateTimeOffset>(),
                     SourceId = A<SourceId>(),
+                    EventId = A<EventId>(),
                 };
 
             if (aggregateSequenceNumber == 0)
@@ -121,7 +131,7 @@ namespace EventFlow.TestHelpers
             return DomainEventFactory.Create<ThingyAggregate, ThingyId>(
                 aggregateEvent,
                 metadata,
-                A<ThingyId>(),
+                thingyId,
                 aggregateSequenceNumber);
         }
 

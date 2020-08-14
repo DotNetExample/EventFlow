@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -29,9 +29,9 @@ using EventFlow.Core;
 using EventFlow.Logs;
 using EventFlow.RabbitMQ.Integrations;
 using EventFlow.TestHelpers;
+using AutoFixture;
 using Moq;
 using NUnit.Framework;
-using Ploeh.AutoFixture;
 using RabbitMQ.Client;
 
 namespace EventFlow.RabbitMQ.Tests.UnitTests.Integrations

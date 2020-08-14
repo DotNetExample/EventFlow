@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -40,12 +40,13 @@ namespace EventFlow.Extensions
         public static IEventFlowOptions AddJobs(
             this IEventFlowOptions eventFlowOptions,
             Assembly fromAssembly,
-            Predicate<Type> predicate)
+            Predicate<Type> predicate = null)
         {
             predicate = predicate ?? (t => true);
             var jobTypes = fromAssembly
                 .GetTypes()
-                .Where(t => !t.GetTypeInfo().IsAbstract && typeof(IJob).GetTypeInfo().IsAssignableFrom(t))
+                .Where(type => !type.GetTypeInfo().IsAbstract && type.IsAssignableTo<IJob>())
+                .Where(t => !t.HasConstructorParameterOfType(i => i.IsAssignableTo<IJob>()))
                 .Where(t => predicate(t));
             return eventFlowOptions.AddJobs(jobTypes);
         }

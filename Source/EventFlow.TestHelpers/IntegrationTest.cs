@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -37,6 +37,8 @@ using EventFlow.Snapshots;
 using EventFlow.Snapshots.Stores;
 using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Commands;
+using EventFlow.TestHelpers.Aggregates.Queries;
+using EventFlow.TestHelpers.Aggregates.Sagas;
 using EventFlow.TestHelpers.Aggregates.ValueObjects;
 using EventFlow.TestHelpers.Extensions;
 using NUnit.Framework;
@@ -60,10 +62,13 @@ namespace EventFlow.TestHelpers
         [SetUp]
         public void SetUpIntegrationTest()
         {
-            var eventFlowOptions = EventFlowOptions.New
-                .AddDefaults(EventFlowTestHelpers.Assembly);
+            var eventFlowOptions = Options(EventFlowOptions.New)
+                .RegisterServices(sr => sr.Register<IScopedContext, ScopedContext>(Lifetime.Scoped))
+                .AddQueryHandler<DbContextQueryHandler, DbContextQuery, string>()
+                .AddDefaults(EventFlowTestHelpers.Assembly, 
+                    type => type != typeof(DbContextQueryHandler));
 
-            Resolver = CreateRootResolver(Options(eventFlowOptions));
+            Resolver = CreateRootResolver(eventFlowOptions);
 
             AggregateStore = Resolver.Resolve<IAggregateStore>();
             EventStore = Resolver.Resolve<IEventStore>();
@@ -95,13 +100,28 @@ namespace EventFlow.TestHelpers
             return AggregateStore.LoadAsync<ThingyAggregate, ThingyId>(thingyId);
         }
 
-        protected async Task<PingId> PublishPingCommandAsync(ThingyId thingyId)
+        protected async Task<PingId> PublishPingCommandAsync(
+            ThingyId thingyId,
+            CancellationToken cancellationToken = default)
         {
-            var pingIds = await PublishPingCommandsAsync(thingyId, 1).ConfigureAwait(false);
+            var pingIds = await PublishPingCommandsAsync(thingyId, 1, cancellationToken).ConfigureAwait(false);
             return pingIds.Single();
         }
 
-        protected async Task<IReadOnlyCollection<PingId>> PublishPingCommandsAsync(ThingyId thingyId, int count)
+        protected Task<ThingySaga> LoadSagaAsync(ThingyId thingyId)
+        {
+            // This is specified in the ThingySagaLocator
+            var expectedThingySagaId = new ThingySagaId($"saga-{thingyId.Value}");
+
+            return AggregateStore.LoadAsync<ThingySaga, ThingySagaId>(
+                expectedThingySagaId,
+                CancellationToken.None);
+        }
+
+        protected async Task<IReadOnlyCollection<PingId>> PublishPingCommandsAsync(
+            ThingyId thingyId,
+            int count, 
+            CancellationToken cancellationToken = default)
         {
             if (count <= 0) throw new ArgumentOutOfRangeException(nameof(count));
 
@@ -110,7 +130,7 @@ namespace EventFlow.TestHelpers
             for (var i = 0; i < count; i++)
             {
                 var pingId = PingId.New;
-                await CommandBus.PublishAsync(new ThingyPingCommand(thingyId, pingId), CancellationToken.None).ConfigureAwait(false);
+                await CommandBus.PublishAsync(new ThingyPingCommand(thingyId, pingId), cancellationToken).ConfigureAwait(false);
                 pingIds.Add(pingId);
             }
 

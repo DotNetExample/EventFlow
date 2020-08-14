@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -22,6 +22,7 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -41,8 +42,8 @@ namespace EventFlow.EventStores.InMemory
     {
         private readonly ILog _log;
 
-        private readonly ConcurrentDictionary<string, List<InMemoryCommittedDomainEvent>> _eventStore =
-            new ConcurrentDictionary<string, List<InMemoryCommittedDomainEvent>>();
+        private readonly ConcurrentDictionary<string, ImmutableEventCollection> _eventStore =
+            new ConcurrentDictionary<string, ImmutableEventCollection>();
 
         private readonly AsyncLock _asyncLock = new AsyncLock();
 
@@ -82,6 +83,35 @@ namespace EventFlow.EventStores.InMemory
             }
         }
 
+        private class ImmutableEventCollection : IReadOnlyCollection<InMemoryCommittedDomainEvent>
+        {
+            private readonly List<InMemoryCommittedDomainEvent> _events;
+
+            public ImmutableEventCollection(List<InMemoryCommittedDomainEvent> events)
+            {
+                _events = events;
+            }
+
+            public int Count => _events.Count;
+
+            public InMemoryCommittedDomainEvent Last => _events.Last();
+
+            public ImmutableEventCollection Add(List<InMemoryCommittedDomainEvent> events)
+            {
+                return new ImmutableEventCollection(_events.Concat(events).ToList());
+            }
+
+            public IEnumerator<InMemoryCommittedDomainEvent> GetEnumerator()
+            {
+                return _events.GetEnumerator();
+            }
+
+            IEnumerator IEnumerable.GetEnumerator()
+            {
+                return GetEnumerator();
+            }
+        }
+
         public InMemoryEventPersistence(
             ILog log)
         {
@@ -96,11 +126,12 @@ namespace EventFlow.EventStores.InMemory
             var startPosition = globalPosition.IsStart
                 ? 0
                 : long.Parse(globalPosition.Value);
-            var endPosition = startPosition + pageSize;
 
             var committedDomainEvents = _eventStore
                 .SelectMany(kv => kv.Value)
-                .Where(e => e.GlobalSequenceNumber >= startPosition && e.GlobalSequenceNumber <= endPosition)
+                .Where(e => e.GlobalSequenceNumber >= startPosition)
+                .OrderBy(e => e.GlobalSequenceNumber)
+                .Take(pageSize)
                 .ToList();
 
             var nextPosition = committedDomainEvents.Any()
@@ -122,18 +153,7 @@ namespace EventFlow.EventStores.InMemory
 
             using (await _asyncLock.WaitAsync(cancellationToken).ConfigureAwait(false))
             {
-                var globalCount = _eventStore.Values.SelectMany(e => e).Count();
-
-                List<InMemoryCommittedDomainEvent> committedDomainEvents;
-                if (_eventStore.ContainsKey(id.Value))
-                {
-                    committedDomainEvents = _eventStore[id.Value];
-                }
-                else
-                {
-                    committedDomainEvents = new List<InMemoryCommittedDomainEvent>();
-                    _eventStore[id.Value] = committedDomainEvents;
-                }
+                var globalCount = _eventStore.Values.Sum(events => events.Count);
 
                 var newCommittedDomainEvents = serializedEvents
                     .Select((e, i) =>
@@ -147,51 +167,56 @@ namespace EventFlow.EventStores.InMemory
                                     Metadata = e.SerializedMetadata,
                                     GlobalSequenceNumber = globalCount + i + 1,
                                 };
-                            _log.Verbose("Committing event {0}{1}", Environment.NewLine, committedDomainEvent.ToString());
+                            _log.Verbose("Committing event {0}{1}", Environment.NewLine, committedDomainEvent);
                             return committedDomainEvent;
                         })
                     .ToList();
 
                 var expectedVersion = newCommittedDomainEvents.First().AggregateSequenceNumber - 1;
-                if (expectedVersion != committedDomainEvents.Count)
-                {
-                    throw new OptimisticConcurrencyException("");
-                }
+                var lastEvent = newCommittedDomainEvents.Last();
 
-                committedDomainEvents.AddRange(newCommittedDomainEvents);
+                var updateResult = _eventStore.AddOrUpdate(id.Value, s => new ImmutableEventCollection(newCommittedDomainEvents),
+                    (s, collection) => collection.Count == expectedVersion 
+                        ? collection.Add(newCommittedDomainEvents) 
+                        : collection);
+
+                if (updateResult.Last != lastEvent)
+                {
+                    throw new OptimisticConcurrencyException(string.Empty);
+                }
 
                 return newCommittedDomainEvents;
             }
         }
 
-        public async Task<IReadOnlyCollection<ICommittedDomainEvent>> LoadCommittedEventsAsync(
+        public Task<IReadOnlyCollection<ICommittedDomainEvent>> LoadCommittedEventsAsync(
             IIdentity id,
             int fromEventSequenceNumber,
             CancellationToken cancellationToken)
         {
-            using (await _asyncLock.WaitAsync(cancellationToken).ConfigureAwait(false))
-            {
-                List<InMemoryCommittedDomainEvent> committedDomainEvent;
-                return _eventStore.TryGetValue(id.Value, out committedDomainEvent)
-                    ? fromEventSequenceNumber <= 1 ? committedDomainEvent : committedDomainEvent.Where(e => e.AggregateSequenceNumber >= fromEventSequenceNumber).ToList()
-                    : new List<InMemoryCommittedDomainEvent>();
-            }
+            IReadOnlyCollection<ICommittedDomainEvent> result;
+
+            if (_eventStore.TryGetValue(id.Value, out var committedDomainEvent))
+                result = fromEventSequenceNumber <= 1
+                    ? (IReadOnlyCollection<ICommittedDomainEvent>) committedDomainEvent
+                    : committedDomainEvent.Where(e => e.AggregateSequenceNumber >= fromEventSequenceNumber).ToList();
+            else
+                result = new List<InMemoryCommittedDomainEvent>();
+
+            return Task.FromResult(result);
         }
 
         public Task DeleteEventsAsync(IIdentity id, CancellationToken cancellationToken)
         {
-            if (!_eventStore.ContainsKey(id.Value))
+            var deleted = _eventStore.TryRemove(id.Value, out var committedDomainEvents);
+
+            if (deleted)
             {
-                return Task.FromResult(0);
+                _log.Verbose(
+                    "Deleted entity with ID '{0}' by deleting all of its {1} events",
+                    id,
+                    committedDomainEvents.Count);
             }
-
-            List<InMemoryCommittedDomainEvent> committedDomainEvents;
-            _eventStore.TryRemove(id.Value, out committedDomainEvents);
-
-            _log.Verbose(
-                "Deleted entity with ID '{0}' by deleting all of its {1} events",
-                id,
-                committedDomainEvents.Count);
 
             return Task.FromResult(0);
         }

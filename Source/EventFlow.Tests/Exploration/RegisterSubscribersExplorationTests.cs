@@ -1,8 +1,8 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
-// https://github.com/rasmus/EventFlow
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
+// https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -26,6 +26,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using EventFlow.Aggregates;
+using EventFlow.Configuration;
 using EventFlow.Core;
 using EventFlow.Extensions;
 using EventFlow.Subscribers;
@@ -33,12 +34,14 @@ using EventFlow.TestHelpers;
 using EventFlow.TestHelpers.Aggregates;
 using EventFlow.TestHelpers.Aggregates.Commands;
 using EventFlow.TestHelpers.Aggregates.Events;
+using EventFlow.TestHelpers.Aggregates.Queries;
 using EventFlow.TestHelpers.Aggregates.ValueObjects;
 using FluentAssertions;
 using NUnit.Framework;
 
 namespace EventFlow.Tests.Exploration
 {
+    [Category(Categories.Integration)]
     public class RegisterSubscribersExplorationTests : Test
     {
         [TestCaseSource(nameof(TestCases))]
@@ -51,6 +54,7 @@ namespace EventFlow.Tests.Exploration
             using (var resolver =  register(EventFlowOptions.New)
                 .AddCommands(typeof(ThingyPingCommand))
                 .AddCommandHandlers(typeof(ThingyPingCommandHandler))
+                .RegisterServices(sr => sr.Register<IScopedContext, ScopedContext>(Lifetime.Scoped))
                 .AddEvents(typeof(ThingyPingEvent))
                 .Configure(c => c.IsAsynchronousSubscribersEnabled = true)
                 .CreateResolver(false))

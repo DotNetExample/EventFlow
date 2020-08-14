@@ -1,7 +1,7 @@
 // The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2018 Rasmus Mikkelsen
+// Copyright (c) 2015-2018 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -25,8 +25,9 @@
 #r "System.IO.Compression.FileSystem"
 #r "System.Xml"
 
-#tool "nuget:?package=NUnit.ConsoleRunner"
+#module nuget:?package=Cake.DotNetTool.Module
 #tool "nuget:?package=OpenCover"
+#tool "dotnet:?package=sourcelink"
 
 using System.IO.Compression;
 using System.Net;
@@ -35,28 +36,17 @@ using System.Xml;
 var VERSION = GetArgumentVersion();
 var PROJECT_DIR = Context.Environment.WorkingDirectory.FullPath;
 var CONFIGURATION = "Release";
-var REGEX_NUGETPARSER = new System.Text.RegularExpressions.Regex(
-    @"(?<group>[a-z]+)\s+(?<package>[a-z\.0-9]+)\s+\-\s+(?<version>[0-9\.]+)",
-    System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
 
 // IMPORTANT DIRECTORIES
 var DIR_OUTPUT_PACKAGES = System.IO.Path.Combine(PROJECT_DIR, "Build", "Packages");
 var DIR_OUTPUT_REPORTS = System.IO.Path.Combine(PROJECT_DIR, "Build", "Reports");
-var DIR_OUTPUT_DOCUMENTATION = System.IO.Path.Combine(PROJECT_DIR, "Build", "Documentation");
-var DIR_DOCUMENTATION = System.IO.Path.Combine(PROJECT_DIR, "Documentation");
-var DIR_BUILT_DOCUMENTATION = System.IO.Path.Combine(DIR_DOCUMENTATION, "_build");
-var DIR_BUILT_HTML_DOCUMENTATION = System.IO.Path.Combine(DIR_BUILT_DOCUMENTATION, "html");
 
 // IMPORTANT FILES
 var FILE_OPENCOVER_REPORT = System.IO.Path.Combine(DIR_OUTPUT_REPORTS, "opencover-results.xml");
 var FILE_NUNIT_XML_REPORT = System.IO.Path.Combine(DIR_OUTPUT_REPORTS, "nunit-results.xml");
-var FILE_NUNIT_TXT_REPORT = System.IO.Path.Combine(DIR_OUTPUT_REPORTS, "nunit-output.txt");
-var FILE_DOCUMENTATION_MAKE = System.IO.Path.Combine(DIR_DOCUMENTATION, "make.bat");
+var FILE_NUNIT_TXT_REPORT = System.IO.Path.Combine(DIR_OUTPUT_REPORTS, "nunit-output.html");
 var FILE_SOLUTION = System.IO.Path.Combine(PROJECT_DIR, "EventFlow.sln");
-var FILE_OUTPUT_DOCUMENTATION_ZIP = System.IO.Path.Combine(
-    DIR_OUTPUT_DOCUMENTATION,
-    string.Format("EventFlow-HtmlDocs-v{0}.zip", VERSION));
-
+var FILE_RUNSETTINGS = System.IO.Path.Combine(PROJECT_DIR, "Test.runsettings");
 var RELEASE_NOTES = ParseReleaseNotes(System.IO.Path.Combine(PROJECT_DIR, "RELEASE_NOTES.md"));
 
 // =====================================================================================================
@@ -71,12 +61,12 @@ Task("Clean")
                 {
                     DIR_OUTPUT_PACKAGES,
                     DIR_OUTPUT_REPORTS,
-                    DIR_OUTPUT_DOCUMENTATION,
-                    DIR_BUILT_DOCUMENTATION,
                 });
 				
-			DeleteDirectories(GetDirectories("**/bin"), true);
-			DeleteDirectories(GetDirectories("**/obj"), true);
+            var settings = new DeleteDirectorySettings {Force = true, Recursive = true};
+
+			DeleteDirectories(GetDirectories("**/bin"), settings);
+			DeleteDirectories(GetDirectories("**/obj"), settings);
         });
 	
 // =====================================================================================================
@@ -101,11 +91,13 @@ Task("Build")
 				".", 
 				new DotNetCoreBuildSettings()
 				{
+                    NoRestore = true,
 					Configuration = CONFIGURATION,
 					ArgumentCustomization = aggs => aggs
                         .Append(GetDotNetCoreArgsVersions())
                         .Append("/p:ci=true")
                         .Append("/p:SourceLinkEnabled=true")
+                        .Append("/p:TreatWarningsAsErrors=true")
 				});
         });
 
@@ -114,12 +106,12 @@ Task("Test")
     .IsDependentOn("Build")
     .Does(() =>
         {
-            ExecuteTest("./Source/**/bin/" + CONFIGURATION + "/**/EventFlow*Tests.dll", FILE_NUNIT_XML_REPORT);
+            ExecuteTest(FindTestDlls("net472"));
+            ExecuteTest(FindTestDlls("netcoreapp3.1"));
         })
-	.Finally(() => 
+	.Finally(() =>
         {
             UploadArtifact(FILE_NUNIT_TXT_REPORT);
-            UploadTestResults(FILE_NUNIT_XML_REPORT);
         });
 
 // =====================================================================================================
@@ -135,7 +127,9 @@ Task("Package")
 				var name = project.GetDirectory().FullPath;
 				var version = VERSION.ToString();
 				
-				if ((name.Contains("Test") && !name.Contains("TestHelpers")) || name.Contains("Example"))
+				if ((name.Contains("Test") && !name.Contains("TestHelpers")) 
+                    || name.Contains("Example")
+                    || name.Contains("CodeStyle"))
 				{
 					continue;
 				}
@@ -149,29 +143,36 @@ Task("Package")
 						Configuration = CONFIGURATION,
 						OutputDirectory = DIR_OUTPUT_PACKAGES,
 						NoBuild = true,
-						Verbose = false,
 						ArgumentCustomization = aggs => aggs.Append(GetDotNetCoreArgsVersions())
 					});
 			}
         });
 
 // =====================================================================================================
-Task("Documentation")
-    .IsDependentOn("Clean")
+Task("ValidateSourceLink")
+    .IsDependentOn("Package")
     .Does(() =>
         {
-            ExecuteCommand(FILE_DOCUMENTATION_MAKE, "html", DIR_DOCUMENTATION);
+            var files = GetFiles($"./Build/Packages/EventFlow*.nupkg");
+            if (!files.Any())
+            {
+                throw new Exception("No NuGet packages found!");
+            }
 
-            ZipFile.CreateFromDirectory(DIR_BUILT_HTML_DOCUMENTATION, FILE_OUTPUT_DOCUMENTATION_ZIP);
+            foreach(var file in files)
+            {
+                var filePath = $"{file}".Replace("/", "\\");		   
+                Information("Validating SourceLink for NuGet file: {0}", filePath);
+                ExecuteCommand("sourcelink", $"test {filePath}");
+            }
         });
 
 // =====================================================================================================
 Task("All")
     .IsDependentOn("Package")
-    .IsDependentOn("Documentation")
+    //.IsDependentOn("ValidateSourceLink") builds on AppVeyor fail for some unknown reason
     .Does(() =>
         {
-
         });
 
 // =====================================================================================================
@@ -194,27 +195,33 @@ void SetReleaseNotes(string filePath)
 {
     var releaseNotes = string.Join(Environment.NewLine, RELEASE_NOTES.Notes);
 
+    SetXmlNode(
+        filePath,
+        "Project/PropertyGroup/PackageReleaseNotes",
+        releaseNotes);
+}
+
+void SetXmlNode(string filePath, string xmlPath, string content)
+{
     var xmlDocument = new XmlDocument();
     xmlDocument.Load(filePath);
 
-    var node = xmlDocument.SelectSingleNode("Project/PropertyGroup/PackageReleaseNotes") as XmlElement;
+    var node = xmlDocument.SelectSingleNode(xmlPath) as XmlElement;
     if (node == null)
     {
-        throw new Exception(string.Format(
-            "Project {0} does not have a `<PackageReleaseNotes>UPDATED BY BUILD</PackageReleaseNotes>` property",
-            filePath));
+        throw new Exception($"Project {filePath} does not have a {xmlPath} property");
     }
 
     if (!AppVeyor.IsRunningOnAppVeyor)
     {
-        Information("Skipping update of release notes");
+        Information($"Skipping update {xmlPath} in {filePath}");
         return;
     } 
     else
     {
-        Information(string.Format("Setting release notes in '{0}'", filePath));
+        Information($"Setting {xmlPath} in {filePath}");
         
-        node.InnerText = releaseNotes;
+        node.InnerText = content;
 
         xmlDocument.Save(filePath);
     }
@@ -240,49 +247,16 @@ void UploadArtifact(string filePath)
     }
 }
 
-void UploadTestResults(string filePath)
+IEnumerable<FilePath> FindTestDlls(string framework)
 {
-    if (!FileExists(filePath))
-    {
-        Information("Skipping uploading of test results, does not exist: {0}", filePath);
-        return;
-    }
-
-    if (AppVeyor.IsRunningOnAppVeyor)
-    {
-        Information("Uploading test results: {0}", filePath);
-
-        try
-        {
-            using (var webClient = new WebClient())
-            {
-                webClient.UploadFile(
-                    string.Format(
-                        "https://ci.appveyor.com/api/testresults/nunit3/{0}",
-                        Environment.GetEnvironmentVariable("APPVEYOR_JOB_ID")),
-                    filePath);
-            }
-        }
-        catch (Exception e)
-        {
-            Error(
-                "Failed to upload '{0}' due to {1} - {2}: {3}",
-                filePath,
-                e.Message,
-                e.GetType().Name,
-                e.ToString());
-        }
-        
-        /*
-        // This should work, but doesn't seem to
-        AppVeyor.UploadTestResults(
-            filePath,
-            AppVeyorTestResultsType.NUnit3);*/
-    }    
-    else
-    {
-        Information("Not on AppVeyor, skipping test result upload of: {0}", filePath);
-    }
+    var dirs = GetDirectories($"Source/*.Tests/bin/{CONFIGURATION}/{framework}");
+    var cwd = Context.Environment.WorkingDirectory;
+    var files = dirs
+        .Select(cwd.GetRelativePath)
+        .Select(d => d.Segments[1])
+        .Select(name => $"Source/{name}/bin/{CONFIGURATION}/{framework}/{name}.dll")
+        .Select(file => new FilePath(file));
+    return files;
 }
 
 string ExecuteCommand(string exePath, string arguments = null, string workingDirectory = null)
@@ -308,44 +282,46 @@ string ExecuteCommand(string exePath, string arguments = null, string workingDir
             throw new Exception("Failed to stop process!");
         }
 
-        Debug(output);
-
         if (process.ExitCode != 0)
         {
+            Error(output);
             throw new Exception(string.Format("Error code {0} was returned", process.ExitCode));
         }
+
+        Debug(output);
 
         return output;
     }
 }
 
-void ExecuteTest(string files, string resultsFile)
+void ExecuteTest(IEnumerable<FilePath> paths)
 {
 	OpenCover(tool => 
 		{
-			tool.NUnit3(
-				files,
-				new NUnit3Settings
-					{
-						Framework = "net-4.5",
-						Timeout = 600000,
-						ShadowCopy = false,
-						NoHeader = true,
-						NoColor = true,
-						DisposeRunners = true,
-						OutputFile = FILE_NUNIT_TXT_REPORT,
-						Results = resultsFile
-					});
+            var settings = new DotNetCoreVSTestSettings()
+                {
+                    Parallel = true,
+                    ToolTimeout = TimeSpan.FromMinutes(30),
+                    Settings = FILE_RUNSETTINGS,
+                    ResultsDirectory = DIR_OUTPUT_REPORTS,
+                    ArgumentCustomization = args =>
+                        args.Append("--nologo")
+                };
+
+            tool.DotNetCoreVSTest(paths, settings);
         },
-    new FilePath(FILE_OPENCOVER_REPORT),
-    new OpenCoverSettings
-        {
-            ArgumentCustomization = aggs => aggs.Append("-returntargetcode")
-        }
-        .WithFilter("+[EventFlow*]*")
-        .WithFilter("-[*Tests]*")
-        .WithFilter("-[*TestHelpers]*")
-        .WithFilter("-[*Shipping*]*"));
+        new FilePath(FILE_OPENCOVER_REPORT),
+        new OpenCoverSettings
+            {
+                Register = AppVeyor.IsRunningOnAppVeyor ? "appveyor" : "user",
+                ReturnTargetCodeOffset = 1000,
+                MergeOutput = true,
+                LogLevel = OpenCoverLogLevel.Warn,
+            }
+            .WithFilter("+[EventFlow*]*")
+            .WithFilter("-[*Tests]*")
+            .WithFilter("-[*TestHelpers]*")
+            .WithFilter("-[*Shipping*]*"));
 }
 
 RunTarget(Argument<string>("target", "Package"));

@@ -1,35 +1,37 @@
 init:
-  - git config --global core.autocrlf input
+  - ps: git config --global core.autocrlf input
+  - ps: '[Environment]::SetEnvironmentVariable("LCOW_SUPPORTED", "1", "Machine")'
+  - ps: Restart-Service docker
 
-version: 0.49.{build}
-
-install:
-  - cmd: pip install -U Sphinx
-  - cmd: pip install sphinx_rtd_theme
+version: 0.80.{build}
 
 skip_tags: true
 
 build_script:
-  - cmd: powershell -NoProfile -ExecutionPolicy unrestricted -Command .\build.ps1 -Target "All"
+  - cmd: powershell -NoProfile -ExecutionPolicy unrestricted -Command ".\up_integration-test-env.ps1; .\build.ps1 --bootstrap; .\build.ps1 -Target All;"
 
-image: Visual Studio 2017
+# https://www.appveyor.com/docs/services-databases/
+# https://www.appveyor.com/docs/windows-images-software/
+
+image: Visual Studio 2019
 
 environment:
-  RABBITMQ_URL:
-    secure: es47RGxjYJo4Ms8YR7ZY1R93OayJf6z3CVH2oUZMChaDXtchygrccwBPIBB8doWH68S13m/4p99EmtjdrudbM1gelesdwewX5ouJXO9wyo1/zZhNZDrUpb21Ojw6O1hH
+  HELPZ_POSTGRESQL_PASS: Password12!
+  EVENTFLOW_MSSQL_SERVER: (local)\SQL2017
+  EVENTFLOW_MSSQL_USER: sa
+  EVENTFLOW_MSSQL_PASS: Password12!
 
 test: off
 
 artifacts:
-  - path: Build\Packages\*.nupkg
-  - path: Build\Documentation\*.zip
+  - path: Build\Packages\*nupkg
 
 services:
-  - mssql2014
+  - mssql2017
+  - postgresql101
 
 on_success:
-- "SET PATH=C:\\Python34;C:\\Python34\\Scripts;%PATH%"
-- pip install codecov
+- choco install codecov
 - codecov -f "Build\\Reports\\opencover-results.xml"
 
 nuget:
@@ -42,10 +44,11 @@ deploy:
     api_key:
       secure: +YlrKmWps7RJVPU4s7B4HWNL9cZXaUVdiNJInli9IZPlTP+J0CyHsUvcDY8haE+b
     skip_symbols: false
+    artifact: /.*\.(nupkg|snupkg)/
     on:
       branch: master
   - provider: GitHub
-    artifact: /.*\.(nupkg|zip)/
+    artifact: /.*\.(nupkg|zip|snupkg)/
     auth_token:
       secure: f+y+RL1ETsxIbYKlliZrmXpfr1wvEVNhGGEOYyl2K8ryz02WxXL+kLe7pu53Kc8r
     tag: v$(appveyor_build_version)

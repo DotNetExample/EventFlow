@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -36,11 +36,10 @@ namespace EventFlow.ReadStores
 {
     public abstract class ReadStoreManager<TReadModelStore, TReadModel> : IReadStoreManager<TReadModel>
         where TReadModelStore : IReadModelStore<TReadModel>
-        where TReadModel : class, IReadModel, new()
+        where TReadModel : class, IReadModel
     {
         // ReSharper disable StaticMemberInGenericType
         private static readonly Type StaticReadModelType = typeof(TReadModel);
-        private static readonly ISet<Type> AggregateTypes;
         private static readonly ISet<Type> AggregateEventTypes;
         // ReSharper enable StaticMemberInGenericType
 
@@ -50,9 +49,6 @@ namespace EventFlow.ReadStores
         protected IReadModelDomainEventApplier ReadModelDomainEventApplier { get; }
         protected IReadModelFactory<TReadModel> ReadModelFactory { get; }
 
-        protected ISet<Type> GetAggregateTypes() => AggregateTypes;
-        protected ISet<Type> GetDomainEventTypes() => AggregateEventTypes;
-
         public Type ReadModelType => StaticReadModelType;
 
         static ReadStoreManager()
@@ -60,7 +56,7 @@ namespace EventFlow.ReadStores
             var iAmReadModelForInterfaceTypes = StaticReadModelType
                 .GetTypeInfo()
                 .GetInterfaces()
-                .Where(i => i.GetTypeInfo().IsGenericType && i.GetGenericTypeDefinition() == typeof(IAmReadModelFor<,,>))
+                .Where(IsReadModelFor)
                 .ToList();
             if (!iAmReadModelForInterfaceTypes.Any())
             {
@@ -68,8 +64,24 @@ namespace EventFlow.ReadStores
                     $"Read model type '{StaticReadModelType.PrettyPrint()}' does not implement any '{typeof(IAmReadModelFor<,,>).PrettyPrint()}'");
             }
 
-            AggregateTypes = new HashSet<Type>(iAmReadModelForInterfaceTypes.Select(i => i.GetTypeInfo().GetGenericArguments()[0]));
             AggregateEventTypes = new HashSet<Type>(iAmReadModelForInterfaceTypes.Select(i => i.GetTypeInfo().GetGenericArguments()[2]));
+            if (AggregateEventTypes.Count != iAmReadModelForInterfaceTypes.Count)
+            {
+                throw new ArgumentException(
+                    $"Read model type '{StaticReadModelType.PrettyPrint()}' implements ambiguous '{typeof(IAmReadModelFor<,,>).PrettyPrint()}' interfaces");
+            }
+        }
+
+        private static bool IsReadModelFor(Type i)
+        {
+            if (!i.GetTypeInfo().IsGenericType)
+            {
+                return false;
+            }
+            
+            var typeDefinition = i.GetGenericTypeDefinition();
+            return typeDefinition == typeof(IAmReadModelFor<,,>) ||
+                   typeDefinition == typeof(IAmAsyncReadModelFor<,,>);
         }
 
         protected ReadStoreManager(
@@ -109,7 +121,8 @@ namespace EventFlow.ReadStores
                 typeof(TReadModelStore).PrettyPrint(),
                 string.Join(", ", relevantDomainEvents.Select(e => e.ToString()))));
 
-            var readModelContext = new ReadModelContext(Resolver);
+            var contextFactory = new ReadModelContextFactory(Resolver);
+
             var readModelUpdates = BuildReadModelUpdates(relevantDomainEvents);
 
             if (!readModelUpdates.Any())
@@ -124,7 +137,7 @@ namespace EventFlow.ReadStores
 
             await ReadModelStore.UpdateAsync(
                 readModelUpdates,
-                readModelContext,
+                contextFactory,
                 UpdateAsync,
                 cancellationToken)
                 .ConfigureAwait(false);
@@ -133,7 +146,7 @@ namespace EventFlow.ReadStores
         protected abstract IReadOnlyCollection<ReadModelUpdate> BuildReadModelUpdates(
             IReadOnlyCollection<IDomainEvent> domainEvents);
 
-        protected abstract Task<ReadModelEnvelope<TReadModel>> UpdateAsync(
+        protected abstract Task<ReadModelUpdateResult<TReadModel>> UpdateAsync(
             IReadModelContext readModelContext,
             IReadOnlyCollection<IDomainEvent> domainEvents,
             ReadModelEnvelope<TReadModel> readModelEnvelope,

@@ -1,7 +1,7 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2017 Rasmus Mikkelsen
-// Copyright (c) 2015-2017 eBay Software Foundation
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
 // https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -24,6 +24,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using EventFlow.Aggregates;
+using EventFlow.Aggregates.ExecutionResults;
 using EventFlow.Commands;
 using EventFlow.Core;
 
@@ -31,11 +32,11 @@ namespace EventFlow
 {
     public interface ICommandBus
     {
-        Task<ISourceId> PublishAsync<TAggregate, TIdentity, TSourceIdentity>(
-            ICommand<TAggregate, TIdentity, TSourceIdentity> command,
+        Task<TExecutionResult> PublishAsync<TAggregate, TIdentity, TExecutionResult>(
+            ICommand<TAggregate, TIdentity, TExecutionResult> command,
             CancellationToken cancellationToken)
             where TAggregate : IAggregateRoot<TIdentity>
             where TIdentity : IIdentity
-            where TSourceIdentity : ISourceId;
+            where TExecutionResult : IExecutionResult;
     }
 }

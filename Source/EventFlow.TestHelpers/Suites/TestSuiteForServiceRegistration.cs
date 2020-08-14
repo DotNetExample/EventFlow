@@ -1,8 +1,8 @@
-﻿// The MIT License (MIT)
+// The MIT License (MIT)
 // 
-// Copyright (c) 2015-2016 Rasmus Mikkelsen
-// Copyright (c) 2015-2016 eBay Software Foundation
-// https://github.com/rasmus/EventFlow
+// Copyright (c) 2015-2020 Rasmus Mikkelsen
+// Copyright (c) 2015-2020 eBay Software Foundation
+// https://github.com/eventflow/EventFlow
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -97,6 +97,40 @@ namespace EventFlow.TestHelpers.Suites
         // ReSharper enable ClassNeverInstantiated.Local
 
         [Test]
+        public void ValidateRegistrationsShouldDispose()
+        {
+            // Arrange
+            var service = new Mock<I>();
+            var createdCount = 0;
+            Sut.Register(_ =>
+            {
+                createdCount++;
+                return service.Object;
+            });
+
+            // Act and Assert
+            using (var resolver = Sut.CreateResolver(true))
+            {
+                createdCount.Should().Be(1);
+                service.Verify(m => m.Dispose(), Times.Once);
+
+                var resolvedService = resolver.Resolve<I>();
+                createdCount.Should().Be(2);
+                resolvedService.Should().BeSameAs(service.Object);
+
+                using (var scopedResolver = resolver.BeginScope())
+                {
+                    var nestedResolvedService = scopedResolver.Resolve<I>();
+                    createdCount.Should().Be(3);
+                    nestedResolvedService.Should().BeSameAs(service.Object);
+                }
+                service.Verify(m => m.Dispose(), Times.Exactly(2));
+            }
+
+            service.Verify(m => m.Dispose(), Times.Exactly(3));
+        }
+
+        [Test]
         public void ServiceViaFactory()
         {
             // Act
@@ -124,6 +158,22 @@ namespace EventFlow.TestHelpers.Suites
 
             // Assert
             Assert_Service();
+        }
+
+        [Test]
+        public void ServiceViaGenericNotFoundThrowsException()
+        {
+            var resolver = Sut.CreateResolver(false);
+            Action callingResolve = () => resolver.Resolve<IMagicInterface>();
+            callingResolve.Should().Throw<Exception>();
+        }
+
+        [Test]
+        public void ServiceViaTypeNotFoundThrowsException()
+        {
+            var resolver = Sut.CreateResolver(false);
+            Action callingResolve = () => resolver.Resolve(typeof(IMagicInterface));
+            callingResolve.Should().Throw<Exception>();
         }
 
         [Test]
@@ -217,6 +267,7 @@ namespace EventFlow.TestHelpers.Suites
             {
                 // Arrange
                 Sut.Register<I, A>(Lifetime.Singleton);
+
                 using (var resolver = Sut.CreateResolver(false))
                 {
                     var i1 = resolver.Resolve<I>();
@@ -244,6 +295,7 @@ namespace EventFlow.TestHelpers.Suites
             {
                 // Arrange
                 Sut.Register<I, A>(Lifetime.Singleton);
+
                 using (var resolver = Sut.CreateResolver(false))
                 {
                     var i1 = resolver.Resolve<I>();
@@ -350,7 +402,7 @@ namespace EventFlow.TestHelpers.Suites
             });
 
             // Assert
-            act.ShouldNotThrow<ArgumentException>();
+            act.Should().NotThrow<ArgumentException>();
         }
 
         public static void Assert_Decorator(IServiceRegistration serviceRegistration)
@@ -393,7 +445,7 @@ namespace EventFlow.TestHelpers.Suites
             });
 
             // Assert
-            act.ShouldNotThrow<ArgumentException>();
+            act.Should().NotThrow<ArgumentException>();
         }
 
         public abstract class AbstractTestSubscriber :
@@ -424,14 +476,12 @@ namespace EventFlow.TestHelpers.Suites
             });
 
             // Assert
-            act.ShouldNotThrow<ArgumentException>();
+            act.Should().NotThrow<ArgumentException>();
         }
 
         public abstract class AbstractTestCommandHandler :
-            ICommandHandler<ThingyAggregate, ThingyId, ThingyPingCommand>
+            CommandHandler<ThingyAggregate, ThingyId, ThingyPingCommand>
         {
-            public abstract Task ExecuteAsync(ThingyAggregate aggregate, ThingyPingCommand command,
-                CancellationToken cancellationToken);
         }
 
         [Test]
@@ -447,7 +497,7 @@ namespace EventFlow.TestHelpers.Suites
             });
 
             // Assert
-            act.ShouldNotThrow<ArgumentException>();
+            act.Should().NotThrow<ArgumentException>();
         }
 
         public abstract class AbstractTestEventUpgrader : IEventUpgrader<ThingyAggregate, ThingyId>
@@ -469,7 +519,7 @@ namespace EventFlow.TestHelpers.Suites
             });
 
             // Assert
-            act.ShouldNotThrow<ArgumentException>();
+            act.Should().NotThrow<ArgumentException>();
         }
         
         [Test]
